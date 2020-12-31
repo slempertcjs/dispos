@@ -235,7 +235,7 @@ coll_df <- doj_df %>%
          sent_prison_flag = max(sent_prison_flag),
          sent_jail_flag = max(sent_jail_flag)) %>%
   ungroup()
-
+ ## need to complete the collapse of all other variables and flags
     
     
     # sent_prison_count = case_when(sent_imp_suspended_flag == 0 ~ sum(sent_prison_flag),
