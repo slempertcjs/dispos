@@ -8,7 +8,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 # Libraries
-```{r}
+```{r include=FALSE}
 library(gsubfn)
 library(lubridate)
 library(openxlsx)
@@ -57,7 +57,7 @@ dsam <- dsam %>%
 
 
 
-#Filter stp_type_descr to just -- ASK WHAT ALL THE REST MEAN -- is there any reason to keep the others?
+#Filter stp_type_descr to just -- ASK WHAT ALL THE REST MEAN -- is there any reason to keep the others? look into cases that were expunged? any other post-disposition actions that would be relevant? look into what the additional arrest action steps are.
 #
 dsam <- dsam %>%
   filter(stp_type_descr %in% c("ARREST/DETAINED/CITED", "COURT ACTION"))
@@ -119,10 +119,11 @@ dsam <- left_join(dsam, charge_hier, by = "join_var")
 # Add prefixes to charge flags
 dsam <- dsam %>%
   mutate(felony_flag = if_else(offense_toc == "F", 1, 0),
-         misd_flag = if_else(offense_toc == "M", 1, 0)) %>%
-  mutate_at(vars(contains("flag")), funs("arrest" = if_else(. == 1 & stp_ori_type_descr == "Arrest", 1, 0))) %>%
-  mutate_at(vars(c(contains("flag"), -contains("_arrest"))), funs("court" = if_else(. == 1 & stp_ori_type_descr == "Court", 1, 0))) %>%
-  mutate_at(vars(c(contains("flag"), -contains("_arrest"), -contains("_court"))), funs("conviction" = if_else(. == 1 & grepl("CONVICTED", disp_descr), 1, 0))) %>%
+         misd_flag = if_else(offense_toc == "M", 1, 0),
+         inf_flag = if_else(offense_toc == "I", 1, 0)) %>%
+  mutate_at(vars(contains("flag"), -contains("sent")), funs("arrest" = if_else(. == 1 & stp_ori_type_descr == "Arrest", 1, 0))) %>%
+  mutate_at(vars(c(contains("flag"), -contains("sent"), -contains("_arrest"))), funs("court" = if_else(. == 1 & stp_ori_type_descr == "Court", 1, 0))) %>%
+  mutate_at(vars(c(contains("flag"), -contains("sent"), -contains("_arrest"), -contains("_court"))), funs("conviction" = if_else(. == 1 & grepl("CONVICTED", disp_descr), 1, 0))) %>%
   rename_at(vars(contains("_conviction")), funs(paste0("conviction_", gsub("_conviction", "", .)))) %>%
   rename_at(vars(contains("_arrest")), funs(paste0("arrest_", gsub("_arrest", "", .)))) %>%
   rename_at(vars(contains("_court")), funs(paste0("court_", gsub("_court", "", .))))
@@ -204,46 +205,131 @@ dsam %>%
 
 ```
 
-Collapse each cycle (modified from Noah's code)
+Collapse each cycle 
 ```{r}
 
-doj_df <- dsam %>%
+## take another pass at this, why can't i get it to stop throwing warnings???
+
+suppressWarnings(
+coll_df <- dsam %>%
+  #this piece is modified from Noah's code, check if needed
+  mutate(arrested_flag = if_else(grepl("Arrest", stp_ori_type_descr), 1, 0),
+         filed_flag = if_else(grepl("Court", stp_ori_type_descr), 1, 0),
+         convicted_flag =  if_else(grepl("^CONVICTED", disp_descr), 1, 0),
+         dismissed_flag = if_else(grepl("DISCH|ACQUIT|DISMISSED|REL|REJ", disp_descr), 1, 0)) %>% 
+  
+  mutate(across(contains("flag"), ~if_else(is.na(.x), 0, .x))) %>%
+ 
+  mutate(hierarchy = if_else(is.na(hierarchy), 1e6, as.numeric(hierarchy))) %>%
   mutate(sentence_date = if_else(!is.na(sent_order), stp_event_date, as_date(NA_character_))) %>%
-  group_by(subject_id, cyc_date) %>%
-  mutate(sentence_date = max(sentence_date), ## check this, should this be min instead of max?
-         dispo_date = max(dispo_date)) %>%
-  ungroup() 
-
-
-coll_df <- doj_df %>%
-  mutate(filed = if_else(grepl("Court", stp_ori_type_descr), 1, 0),
-         convicted =  if_else(grepl("^CONVICTED", disp_descr), 1, 0),
-         dismissed = if_else(grepl("DISCH|ACQUIT|DISMISSED", disp_descr), 1, 0)) %>% 
-
+  
   ##adjust sentence indicators to account for suspended sentences
   ## need to first deal with within each charge to cancel out suspended jail/prison sentences
   group_by(subject_id, cyc_date, cnt_order) %>%
+  
   mutate(sent_ex_suspended_flag = max(sent_ex_suspended_flag),
          sent_imp_suspended_flag = max(sent_imp_suspended_flag),
          sent_prison_flag = if_else(sent_imp_suspended_flag == 1, 0, sent_prison_flag),
          sent_jail_flag = if_else(sent_imp_suspended_flag == 1, 0, sent_jail_flag)) %>%
+  
   group_by(subject_id, cyc_date) %>%
+  
+  #how should concurrent sentences be treated? looked at instances, and appears to be used inconsistently, sometimes when there is no other sentence for it to be concurrent with. could do max instead of sum when there is a concurrent flag, but in cases with more than 2 sentences this may not be correct. probably best to leave as is. 
   mutate(prison_length_days = sum(sent_length_days[sent_prison_flag == 1]),
          jail_length_days = sum(sent_length_days[sent_jail_flag == 1]),
          probation_length_days = sum(sent_length_days[sent_probation_flag == 1]),
-         sent_probation_flag = if_else(sent_ex_suspended_flag == 1 | sent_imp_suspended_flag == 1, 1, max(sent_probation_flag)),
-         sent_prison_flag = max(sent_prison_flag),
-         sent_jail_flag = max(sent_jail_flag)) %>%
-  ungroup()
- ## need to complete the collapse of all other variables and flags
-    
-    
+         #probation length will be incorrect in cases where there is a suspended sentence with no probation term specified
+         sent_probation_flag = if_else(sent_ex_suspended_flag == 1 | sent_imp_suspended_flag == 1, 1, max(sent_probation_flag))) %>%
+  mutate(across(matches("sent_.*_flag"), max)) %>%
+  
+  mutate(across(matches("arrest_.*_flag"), ~if_else(sum(arrested_flag) == 0, 0, max(.x[arrested_flag == 1]))),
+         across(matches("court_.*_flag"), ~if_else(sum(filed_flag) == 0, 0, max(.x[filed_flag == 1]))),
+         across(matches("conviction_.*_flag"), ~if_else(sum(convicted_flag) == 0, 0, max(.x[convicted_flag == 1])))) %>%
+  
+  mutate(max_arrest_hier = if_else(sum(arrested_flag) == 0, 1e6, min(hierarchy[arrested_flag == 1])),
+         max_court_hier = if_else(sum(filed_flag) == 0, 1e6, min(hierarchy[filed_flag == 1])),
+         max_conv_hier = if_else(sum(convicted_flag) == 0, 1e6, min(hierarchy[convicted_flag == 1]))) %>%
+  
+  mutate(across(c(arrested_flag, filed_flag, convicted_flag, dismissed_flag, arrest_disp, court_disp), max)) %>%
+  
+  mutate(dispo_date = max(dispo_date, na.rm = T),
+         sentence_date = min(sentence_date, na.rm = T)) %>%
+  ungroup() %>%
+  
+  distinct(subject_id, cyc_date, .keep_all = T) 
+)
+
+#deal with qualifiers!
+
+coll_df %>%
+  select(-c(stp_order, stp_event_date, stp_type_code, stp_type_descr, stp_ori_type_descr, cnt_order, disp_date, offense_code, offense_descr, join_var, offense_toc, disp_order, disp_code, conv_stat_code, conv_stat_descr, sent_order, sent_loc_descr, sent_length, sent_time_descr, offense_orig, offense_stat, offense, charge_level, charge_code, charge, master_charge_description, hierarchy, jbsis_code))
+
+
+coll_df
+
+
+```
+
+Old code and diagnostics
+```{r}
+dsam %>%
+  #this piece is modified from Noah's code, check if needed
+  mutate(arrested_flag = if_else(grepl("Arrest", stp_ori_type_descr), 1, 0),
+         filed_flag = if_else(grepl("Court", stp_ori_type_descr), 1, 0),
+         convicted_flag =  if_else(grepl("^CONVICTED", disp_descr), 1, 0),
+         dismissed_flag = if_else(grepl("DISCH|ACQUIT|DISMISSED|REL|REJ", disp_descr), 1, 0)) %>%
+  filter(subject_id == "35878334") %>%
+  mutate(across(matches("arrest_.*_flag"), ~if_else(sum(arrested_flag) == 0, 0, max(.x[arrested_flag == 1]))),
+         across(matches("court_.*_flag"), ~if_else(sum(filed_flag) == 0, 0, max(.x[filed_flag == 1]))),
+         across(matches("conviction_.*_flag"), ~~if_else(sum(convicted_flag) == 0, 0, max(.x[convicted_flag == 1]))))
+
+
+dsam %>%
+  count(across(matches("arrest_.*_flag")))
+
+dsam %>%
+  group_by(subject_id, cyc_date) %>%
+  mutate(sent_concurrent_flag = max(sent_concurrent_flag)) %>%
+  ungroup() %>%
+  filter(sent_concurrent_flag == 1) %>%
+  arrange(subject_id, cyc_date)
+
+dsam %>%
+  count(across(matches("sent_.*_flag")), sort = TRUE)
+
+
+#collapse code from pilot
+court_dispo <- court_charge %>%
+  mutate(disposition_type = ordered(disposition_type, levels = c("Other", "Dismissed", "Not_Guilty", "Nolo_Contendere", "Guilty"))) %>%
+  mutate(sentence_type = ordered(sentence_type, levels = c("Other", "Probation", "Jail", "Prison"))) %>%
+  group_by(court_case_id) %>%
+  mutate(hierarchy = if_else(is.na(hierarchy), 1e6, as.numeric(hierarchy))) %>%
+  group_by(court_case_id) %>%
+  mutate(disposition_date = max(disposition_date, na.rm = T),
+         disposition_type = max(disposition_type),
+         conviction_flag = if_else(disposition_type %in% c("Guilty","Nolo_Contendere"), 1, 0),
+         sentence_date = if_else(conviction_flag == 1, min(sentence_date, na.rm = T), as_date(NA)),
+         sentence_type = max(sentence_type)) %>%
+  # mutate(max_court_charge_level = court_charge_level[hierarchy == min(hierarchy)][1],
+  #        max_court_charge_code = court_charge_code[hierarchy == min(hierarchy)][1],
+  #        max_court_charge = court_charge[hierarchy == min(hierarchy)][1],
+  #        max_charge_description = master_charge_description[hierarchy == min(hierarchy)][1],
+  #        max_hier = min(hierarchy)) %>%
+  mutate_at(vars(contains("flag")), funs(if_else(is.na(.), 0, as.numeric(.)))) %>%
+  mutate_at(vars(contains("flag")), funs("count" = sum(.))) %>%
+  mutate_at(vars(contains("flag")), max) %>%
+  filter(hierarchy == min(hierarchy)) %>%
+  ungroup() %>%
+  distinct(court_case_id, .keep_all = T)
+
+
     # sent_prison_count = case_when(sent_imp_suspended_flag == 0 ~ sum(sent_prison_flag),
     #                                    sent_imp_suspended_flag ==1 & sum(sent_prison_flag) > 0 ~ sum(sent_prison_flag) - 1,
     #                                    sum(sent_prison_flag) == 0 ~ 0),
     #      sent_jail_count = case_when(sent_imp_suspended_flag == 0 | sent_prison_count < sum(sent_prison_flag) ~ sum(sent_jail_flag),
     #                                  sent_imp_suspended_flag == 1 & sum(sent_jail_flag) > 0 ~ sum(sent_jail_flag) - 1,
     #                                  sum(sent_jail_flag) == 0 ~ 0)
+
 coll_df %>%
   count(sent_prison_flag, sent_jail_flag, sent_probation_flag, sent_imp_suspended_flag, sent_ex_suspended_flag) %>%
   arrange(sent_prison_flag, sent_jail_flag, sent_probation_flag, sent_imp_suspended_flag, sent_ex_suspended_flag)
@@ -260,31 +346,6 @@ coll_df %>%
 
 coll_df %>%
   filter(sent_imp_suspended_flag == 1)
-  
-```  
-  mutate(across(c(contains("_flag"), -contains("sent_")), max)) %>%
- ## deal with sentence flags and lengths here
-  mutate(if_else(sent_imp_suspended == 1))
-  mutate(max_hier = min(hierarchy),
-         max_charge = charge[hierarchy == max_hier][1],
-         max_descrip = off_descrip[hierarchy == max_hier][1]) %>%
-  mutate(max_conv_charge = charge[grepl("^CONVICTED", DISP_DESCR)][1],
-         max_conv_descrip = off_descrip[grepl("^CONVICTED", DISP_DESCR)][1],
-         max_conv_hier = hierarchy[max_conv_charge == charge][1]) %>%
-
-  mutate(disp_descr = paste(unique(disp_descr), collapse = ", "),
-         desc = paste(unique(desc), collapse = ", ")) %>%
-         # SENT_LOC_DESCR = paste(unique(SENT_LOC_DESCR), collapse = ", "),
-         # SENT_LENGTH = paste(unique(SENT_LENGTH), collapse = ", "),
-         # SENT_TIME_DESCR = paste(unique(SENT_TIME_DESCR), collapse = ", ")) %>%
-  # filter(hierarchy == min(hierarchy)) %>%
-  ungroup() %>%
-  distinct(cii_number, cyc_date, .keep_all = T) 
-
-coll_df <- coll_df %>%
-  mutate(max_conv_hier = if_else(max_conv_charge == "", 1e6, max_conv_hier)) %>%
-  mutate_at(vars(DISP_DESCR, desc), funs(gsub("^,", "", .)))
-
 ```
 
 Collapse historical cycles by person
