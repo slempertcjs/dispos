@@ -224,7 +224,7 @@ coll_df <- dsam %>%
   mutate(sentence_date = if_else(!is.na(sent_order), stp_event_date, as_date(NA_character_))) %>%
   
   ##adjust sentence indicators to account for suspended sentences
-  ## need to first deal with within each charge to cancel out suspended jail/prison sentences
+  ## first deal with within each count to cancel out suspended jail/prison sentences
   group_by(subject_id, cyc_date, cnt_order) %>%
   
   mutate(sent_ex_suspended_flag = max(sent_ex_suspended_flag),
@@ -254,18 +254,31 @@ coll_df <- dsam %>%
   
   mutate(dispo_date = max(dispo_date, na.rm = T),
          sentence_date = min(sentence_date, na.rm = T)) %>%
+  
+  #combine qualifiers and remove "NA"s
+  mutate(offense_qual_lst = gsub(",NA|NA,","", paste(offense_qual_lst, collapse = ",")),
+         offense_qual_lst = if_else(offense_qual_lst == "NA", NA_character_, offense_qual_lst)) %>%
+  
   ungroup() %>%
   
   distinct(subject_id, cyc_date, .keep_all = T) 
 )
 
-#deal with qualifiers!
+#occasionally there is more than one county listed, or some of the rows list the county as "UNKNOWN". Not very many instances, and it looks like often the first line is not the missing one, so currently not worrying about this. Looks like it is when the arrest and court actions are in different counties. In most of these (already few) cases, the court county is missing. In very few cases there is a different county listed for arrest and court counties. 
 
 coll_df %>%
   select(-c(stp_order, stp_event_date, stp_type_code, stp_type_descr, stp_ori_type_descr, cnt_order, disp_date, offense_code, offense_descr, join_var, offense_toc, disp_order, disp_code, conv_stat_code, conv_stat_descr, sent_order, sent_loc_descr, sent_length, sent_time_descr, offense_orig, offense_stat, offense, charge_level, charge_code, charge, master_charge_description, hierarchy, jbsis_code))
 
 
-coll_df
+dsam %>%
+  group_by(cyc_date, subject_id) %>%
+  mutate(n = length(unique(stp_ori_cnty_name))) %>%
+  mutate(counties = paste(stp_ori_cnty_name, collapse = ", ")) %>%
+  ungroup %>%
+  filter(n>1) %>%
+  select(counties, stp_ori_cnty_name, stp_ori_type_descr) 
+  distinct(cyc_date, subject_id, .keep_all = T) %>%
+  count(counties)
 
 
 ```
@@ -350,14 +363,80 @@ coll_df %>%
 
 Collapse historical cycles by person
 ```{r}
+doj_df <- coll_df %>%
+  select(-c(stp_order, stp_event_date, stp_type_code, stp_type_descr, stp_ori_type_descr, cnt_order, disp_date, offense_code, offense_descr, join_var, offense_toc, disp_order, disp_code, conv_stat_code, conv_stat_descr, sent_order, sent_loc_descr, sent_length, sent_time_descr, offense_orig, offense_stat, offense, charge_level, charge_code, charge, master_charge_description, hierarchy, jbsis_code, special_flag, serious_felony_flag, violent_felony_flag, violent_psa_flag, capital_flag, dv_flag, marijuana_flag, sup_vio_flag, fta_flag, sex_flag, dui_flag, sb10_dui_flag, restrain_flag, sb10_onduty_inel_flag, sb10_dui_flag, property_flag, drug_flag, dv_possible_flag, felony_flag, misd_flag, inf_flag))
+  
 
+  
+#most individuals have 1 2019 disposition. A couple have none, and some have more than 1. Unit of analysis should be the disposition. Separate out the non-current dispositions and collapse them down to the person, and then attach the collapsed criminal histories by person to each current disposition. 
 
+dispos_2019 <- doj_df %>%
+  filter(year(dispo_date) == 2019)
 
+histories <- doj_df %>%
+  filter(year(dispo_date) != 2019) #what about rows with no dispo date? do these all not have a disposition? why are they in this dataset? should I include these for arrests?
+  
+hist_collapse <- histories %>%
+  group_by(subject_id) %>%
+  mutate(days_prior_prison = sum(prison_length_days),
+         days_prior_jail = sum(jail_length_days),
+         days_prior_probation = sum(probation_length_days)) %>%
+    
+  #combine qualifiers and remove "NA"s
+  mutate(prior_quals = gsub(",NA|NA,","", paste(offense_qual_lst, collapse = ",")),
+         prior_quals = if_else(prior_quals == "NA", NA_character_, prior_quals)) %>%
+  
+  mutate(prior_dispo_date = max(dispo_date, na.rm = T), #keep the most recent prior disposition date
+         citizen = if_else(is.na(citizen), 0, citizen),
+         prior_citizen = max(citizen, na.rm = T),
+         age_first_dispo = min(cyc_age, na.rm = T)) %>%
+
+  #create counts for each flag
+  mutate(across(contains("flag"), sum, .names = "prior_{.col}_count")) %>%
+  mutate(across(contains("hier"), min, .names = "prior_{.col}")) %>%
+  
+  ungroup() %>%
+  distinct(subject_id, .keep_all = T) %>%
+
+  select(subject_id, contains("prior"), age_first_dispo)
+  
+  
+#join histories to 2019 dispositions
+doj_df <- dispos_2019 %>%
+  left_join(hist_collapse)
+
+#fwrite(doj_df, "G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/Cleaned DOJ data small sample 1.4.2021.csv")
+
+#should add some kind of indicator for concurrent cases, or additional 2019 cases. Or should add earlier 2019 cases to criminal history for later cases in 2019? yeesh.
 ```
 
 
 ```{r}
 
+
+doj_df %>%
+  mutate(dispo_2019 = if_else(year(dispo_date) == 2019, 1, 0)) %>%
+  count(dispo_2019)
+  group_by(subject_id) %>%
+  mutate(current_count = sum(dispo_2019, na.rm = T)) %>%
+  ungroup() %>%
+  distinct(subject_id, .keep_all = T) %>%
+  count(current_count)
+  
+  
+doj_df %>%
+  count(yr = year(dispo_date)) %>%
+  arrange(desc(n)) %>%
+  mutate(yrtf = if_else(yr == 2019, T, F))
+
+doj_df %>%
+  distinct(subject_id)
+
+str_replace_na(c(1, 2, 3, NA_character_), replacement = 0)
+
+histories %>%
+  select(contains("flag"))
+  select(contains("hier"))
 dsam %>%
   select(contains("date"))
 
