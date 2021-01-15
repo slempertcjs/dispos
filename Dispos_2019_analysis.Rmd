@@ -19,13 +19,13 @@ library(fuzzyjoin)
 library(tidyverse)
 library(tools)
 library(vroom)
+library(beepr)
 
 ```
 
 ## Import Data
 
 ```{r}
-
 #df <- fread("G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/Raw Doj Data 2019.csv", colClasses = "character", header = T)
 
 #df <- read.csv("G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/Raw Doj Data 2019.csv", colClasses = "character", header = T)
@@ -38,6 +38,86 @@ dsam <- vroom("G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/R
 
 
 #obts <- vroom("G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/DALA_2019_JCC.csv")
+```
+
+Diagnostic code using the full dataset isolating columns of interest
+```{r}
+# allsubs <- vroom("G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/Raw DOJ Data 2019-Empty Variables Removed.csv",
+#                  col_select = c(SUBJECT_ID),
+#                  #n_max = 100000,
+#                  col_types = c(.default = "c"))
+
+#figure out break points for chunking so that no subjects are broken into multiple chunks
+# allsubs <- allsubs %>%
+#   arrange(SUBJECT_ID)
+
+# distinct_subs <- allsubs %>%
+#   distinct(SUBJECT_ID)
+# 93,920 distinct subjects
+
+
+# longsam <- vroom("G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/Raw DOJ Data 2019-Empty Variables Removed.csv",
+#                  col_select = c(SUBJECT_ID, CYC_DATE, OFFENSE_DESCR, OFFENSE_TOC),
+#                  #n_max = 100000,
+#                  col_types = c(.default = "c"))
+# beep(4)
+# 
+# subjs <- longsam %>%
+#   distinct(SUBJECT_ID)
+# 
+# offenses <- longsam %>%
+#   count(OFFENSE_DESCR, OFFENSE_TOC)
+# 
+# yr_ct <- longsam %>%
+#   mutate(CYC_DATE = as_date(CYC_DATE)) %>%
+#   count(year(CYC_DATE)) 
+
+# long_subcyc <- vroom("G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/Raw DOJ Data 2019-Empty Variables Removed.csv",
+#                  col_select = c(SUBJECT_ID, CYC_DATE),
+#                  #n_max = 100000,
+#                  col_types = c(.default = "c"))
+# beep(4)
+
+# subcyc <- long_subcyc %>%
+#   mutate(CYC_DATE = as_date(CYC_DATE)) %>%
+#   distinct(SUBJECT_ID, CYC_DATE)
+
+#1,773,653 unique subject/cyc_date combinations
+
+# beep(4)  # beep 4 is "work complete". beep 9 would make a good error noise. beep 10 is pleasantly short.
+
+#names(yr_ct) <- c("year", "n")
+
+# yr_ct %>%
+#   arrange(desc(year))
+
+# load("G:/CrimJustice/PretrialAssessmentPilot/Complete Charge Code Hierarchy.RData")
+# 
+# 
+# jbsis_missing_offenses <- offenses %>%
+#   mutate(offense_orig = str_extract(OFFENSE_DESCR, "^.*\\-"),
+#          offense_stat = str_extract(offense_orig, " .*"),
+#          offense_stat = gsub(" |-.*", "", offense_stat),
+#          offense_orig = gsub(" .*", "", offense_orig),
+#          offense = toupper(gsub("\\/|\\(|\\)| |\\.|\\.*|^[A-Z]*|\\\\.*|\\{|\\}","", offense_orig))) %>%
+#   unite(join_var, OFFENSE_TOC, offense_stat, offense, remove = F, na.rm = T) %>%
+#   inner_join(charge_hier, by = "join_var") %>%
+#   filter(jbsis_code == 1000) %>%
+#   arrange(desc(n))
+# 
+# fwrite(jbsis_missing_offenses, "G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/Offenses missing JBSIS codes by frequency in ACHS.csv")
+
+# nonmatching_offenses <- offenses %>%
+#   mutate(offense_orig = str_extract(OFFENSE_DESCR, "^.*\\-"),
+#          offense_stat = str_extract(offense_orig, " .*"),
+#          offense_stat = gsub(" |-.*", "", offense_stat),
+#          offense_orig = gsub(" .*", "", offense_orig),
+#          offense = toupper(gsub("\\/|\\(|\\)| |\\.|\\.*|^[A-Z]*|\\\\.*|\\{|\\}","", offense_orig))) %>%
+#   unite(join_var, OFFENSE_TOC, offense_stat, offense, remove = F, na.rm = T) %>%
+#   anti_join(charge_hier, by = "join_var") %>%
+#   arrange(desc(n))
+
+#fwrite(nonmatching_offenses, "G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/Offenses not matching charge hierarchy by frequency in ACHS.csv")
 
 
 ```
@@ -114,6 +194,8 @@ Join charge hierarchy and add prefixes to charge flags
 ```{r}
 # #Join charge hierarchy with offense flags
 load("G:/CrimJustice/PretrialAssessmentPilot/Complete Charge Code Hierarchy.RData")
+##### if I want to add JBSIS codes to those two most common Infractions that are missing them, would do that here 
+
 dsam <- left_join(dsam, charge_hier, by = "join_var")
       
 # Add prefixes to charge flags
@@ -270,15 +352,15 @@ coll_df %>%
   select(-c(stp_order, stp_event_date, stp_type_code, stp_type_descr, stp_ori_type_descr, cnt_order, disp_date, offense_code, offense_descr, join_var, offense_toc, disp_order, disp_code, conv_stat_code, conv_stat_descr, sent_order, sent_loc_descr, sent_length, sent_time_descr, offense_orig, offense_stat, offense, charge_level, charge_code, charge, master_charge_description, hierarchy, jbsis_code))
 
 
-dsam %>%
-  group_by(cyc_date, subject_id) %>%
-  mutate(n = length(unique(stp_ori_cnty_name))) %>%
-  mutate(counties = paste(stp_ori_cnty_name, collapse = ", ")) %>%
-  ungroup %>%
-  filter(n>1) %>%
-  select(counties, stp_ori_cnty_name, stp_ori_type_descr) 
-  distinct(cyc_date, subject_id, .keep_all = T) %>%
-  count(counties)
+# dsam %>%
+#   group_by(cyc_date, subject_id) %>%
+#   mutate(n = length(unique(stp_ori_cnty_name))) %>%
+#   mutate(counties = paste(stp_ori_cnty_name, collapse = ", ")) %>%
+#   ungroup %>%
+#   filter(n>1) %>%
+#   select(counties, stp_ori_cnty_name, stp_ori_type_descr) 
+#   distinct(cyc_date, subject_id, .keep_all = T) %>%
+#   count(counties)
 
 
 ```
@@ -361,6 +443,18 @@ coll_df %>%
   filter(sent_imp_suspended_flag == 1)
 ```
 
+Sample code from noah for lag
+```{r}
+df <- tibble(x = 1:3)
+
+df %>%
+mutate(y = cumsum(lag(x, default = 0)))
+
+df %>%
+mutate(prior_property_flag = cummax(lag(property_flag, default = 0)),
+prior_hierarchy = cummin(lag(hierarchy, default = 1e6)))
+```
+
 Collapse historical cycles by person
 ```{r}
 doj_df <- coll_df %>%
@@ -410,7 +504,7 @@ doj_df <- dispos_2019 %>%
 #should add some kind of indicator for concurrent cases, or additional 2019 cases. Or should add earlier 2019 cases to criminal history for later cases in 2019? yeesh.
 ```
 
-
+Diagnostics
 ```{r}
 
 
