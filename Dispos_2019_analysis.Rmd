@@ -194,7 +194,29 @@ Join charge hierarchy and add prefixes to charge flags
 ```{r}
 # #Join charge hierarchy with offense flags
 load("G:/CrimJustice/PretrialAssessmentPilot/Complete Charge Code Hierarchy.RData")
-##### if I want to add JBSIS codes to those two most common Infractions that are missing them, would do that here 
+
+## add JBSIS codes to the two most common Infractions that are missing them
+charge_hier <- charge_hier %>%
+  mutate(jbsis_code = if_else(join_var %in% c("I_VC_4000A", "I_VC_16028A"), 290, jbsis_code))
+
+## add JBSIS category flags that are not already captured in the hierarchy
+  ## already in the hierarchy: property_flag, drug_flag. remove these to create misdo/fel specific jbsis flags
+charge_hier <- charge_hier %>%
+  select(-c(property_flag, drug_flag)) %>%
+  mutate(jbsis_m_property_flag = if_else(jbsis_code %in% c(220), 1, 0),
+         jbsis_m_drug_flag = if_else(jbsis_code %in% c(230), 1, 0),
+         jbsis_m_violent_flag = if_else(jbsis_code %in% c(210), 1, 0),
+         jbsis_m_sex_flag = if_else(jbsis_code %in% c(240), 1, 0),
+         jbsis_m_other_flag = if_else(jbsis_code %in% c(250, 260), 1, 0),
+         jbsis_traffic_flag = if_else(jbsis_code %in% c(270, 280, 290), 1, 0),
+         jbsis_f_property_flag = if_else(jbsis_code %in% c(70), 1, 0),
+         jbsis_f_drug_flag = if_else(jbsis_code %in% c(80), 1, 0),
+         jbsis_f_violent_flag = if_else(jbsis_code %in% c(10, 20, 30, 40, 50), 1, 0),
+         jbsis_f_sex_flag = if_else(jbsis_code %in% c(60), 1, 0),
+         jbsis_f_other_flag = if_else(jbsis_code %in% c(90), 1, 0))
+
+#there are still a lot of JBSIS codes that are 0, I thought we changed them to be 1000, check in with Noah about this. there are also 3 that are still NA. make sure something didn't go wrong in our updated code
+
 
 dsam <- left_join(dsam, charge_hier, by = "join_var")
       
@@ -203,17 +225,26 @@ dsam <- dsam %>%
   mutate(felony_flag = if_else(offense_toc == "F", 1, 0),
          misd_flag = if_else(offense_toc == "M", 1, 0),
          inf_flag = if_else(offense_toc == "I", 1, 0)) %>%
-  mutate_at(vars(contains("flag"), -contains("sent")), funs("arrest" = if_else(. == 1 & stp_ori_type_descr == "Arrest", 1, 0))) %>%
-  mutate_at(vars(c(contains("flag"), -contains("sent"), -contains("_arrest"))), funs("court" = if_else(. == 1 & stp_ori_type_descr == "Court", 1, 0))) %>%
+  mutate_at(vars(contains("flag"), -contains("sent")), funs("arrest" = if_else(. == 1 & stp_type_descr == "ARREST/DETAINED/CITED", 1, 0))) %>%
+  mutate_at(vars(c(contains("flag"), -contains("sent"), -contains("_arrest"))), funs("court" = if_else(. == 1 & stp_type_descr == "COURT ACTION", 1, 0))) %>%
   mutate_at(vars(c(contains("flag"), -contains("sent"), -contains("_arrest"), -contains("_court"))), funs("conviction" = if_else(. == 1 & grepl("CONVICTED", disp_descr), 1, 0))) %>%
   rename_at(vars(contains("_conviction")), funs(paste0("conviction_", gsub("_conviction", "", .)))) %>%
   rename_at(vars(contains("_arrest")), funs(paste0("arrest_", gsub("_arrest", "", .)))) %>%
   rename_at(vars(contains("_court")), funs(paste0("court_", gsub("_court", "", .))))
 
+#remove the flags without prefixes
+dsam <- dsam %>%
+  select(!(serious_felony_flag:inf_flag))
+
 ```
 
 Diagnostic code
 ```{r}
+# charge_hier %>%
+#   mutate(jbsis = jbsis_m_property_flag + jbsis_m_drug_flag + jbsis_m_violent_flag + jbsis_m_sex_flag + jbsis_m_other_flag + jbsis_traffic_flag + jbsis_f_property_flag + jbsis_f_drug_flag + jbsis_f_violent_flag + jbsis_f_sex_flag+ jbsis_f_other_flag) %>%
+#   filter(jbsis == 1)
+
+
 dsam %>%
   filter(arrest_disp ==1) %>%
   count(disp_descr) %>%
@@ -348,8 +379,8 @@ coll_df <- dsam %>%
 
 #occasionally there is more than one county listed, or some of the rows list the county as "UNKNOWN". Not very many instances, and it looks like often the first line is not the missing one, so currently not worrying about this. Looks like it is when the arrest and court actions are in different counties. In most of these (already few) cases, the court county is missing. In very few cases there is a different county listed for arrest and court counties. 
 
-coll_df %>%
-  select(-c(stp_order, stp_event_date, stp_type_code, stp_type_descr, stp_ori_type_descr, cnt_order, disp_date, offense_code, offense_descr, join_var, offense_toc, disp_order, disp_code, conv_stat_code, conv_stat_descr, sent_order, sent_loc_descr, sent_length, sent_time_descr, offense_orig, offense_stat, offense, charge_level, charge_code, charge, master_charge_description, hierarchy, jbsis_code))
+# coll_df %>%
+#   select(-c(stp_order, stp_event_date, stp_type_code, stp_type_descr, stp_ori_type_descr, cnt_order, disp_date, offense_code, offense_descr, join_var, offense_toc, disp_order, disp_code, conv_stat_code, conv_stat_descr, sent_order, sent_loc_descr, sent_length, sent_time_descr, offense_orig, offense_stat, offense, charge_level, charge_code, charge, master_charge_description, hierarchy, jbsis_code))
 
 
 # dsam %>%
@@ -476,10 +507,12 @@ test %>%
 
 Collapse historical cycles by person
 ```{r}
+#remove useless fields
 doj_df <- coll_df %>%
-  select(-c(stp_order, stp_event_date, stp_type_code, stp_type_descr, stp_ori_type_descr, cnt_order, disp_date, offense_code, offense_descr, join_var, offense_toc, disp_order, disp_code, conv_stat_code, conv_stat_descr, sent_order, sent_loc_descr, sent_length, sent_time_descr, offense_orig, offense_stat, offense, charge_level, charge_code, charge, master_charge_description, hierarchy, jbsis_code, special_flag, serious_felony_flag, violent_felony_flag, violent_psa_flag, capital_flag, dv_flag, marijuana_flag, sup_vio_flag, fta_flag, sex_flag, dui_flag,  restrain_flag,  property_flag, drug_flag, dv_possible_flag, felony_flag, misd_flag, inf_flag))
+  select(-c(stp_order, stp_event_date, stp_type_code, stp_type_descr, stp_ori_type_descr, cnt_order, disp_date, offense_code, offense_descr, join_var, offense_toc, disp_order, disp_code, conv_stat_code, conv_stat_descr, sent_order, sent_loc_descr, sent_length, sent_time_descr, offense_orig, offense_stat, offense, charge_level, charge_code, charge, master_charge_description, hierarchy, jbsis_code, special_flag))
+#now removing the rest of these before the cycle collapse
+#serious_felony_flag, violent_felony_flag, violent_psa_flag, capital_flag, dv_flag, marijuana_flag, sup_vio_flag, fta_flag, sex_flag, dui_flag,  restrain_flag, jbsis_m_property_flag, jbsis_m_drug_flag, jbsis_f_property_flag, jbsis_f_drug_flag, dv_possible_flag, felony_flag, misd_flag, inf_flag))
 
-#note to self: need to create any additional JBSIS flags (much earlier in the code) before we do this for real
 
 hist_collapse <- doj_df %>%
   arrange(cyc_date) %>%
