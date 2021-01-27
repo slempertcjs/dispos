@@ -1,0 +1,1138 @@
+---
+title: "OBTS Data Analysis"
+output: html_notebook
+---
+
+# import libaries
+```{r}
+library(caret)
+library(readxl)
+library(tidyverse)
+library(lme4)
+library(waffle)
+library(pscl) #the library that has the pseudo r^2 function, called pR2
+```
+
+
+# for a different project, analysis of serious and violent crimes
+```{r serious violent}
+svc <- read_xlsx("Serious and Violent Charges.xlsx")
+
+names(svc) <- tolower(names(svc))
+
+svc <- svc %>%
+  separate(charge, c("code_type", "charge"), sep = 3) %>%
+  mutate(code_type = case_when(
+    code_type == "PEN" ~ "PC",
+    code_type == "VEH" ~ "VC",
+    code_type == "HSC" ~ "HS",
+    code_type == "BPC" ~ "BP",
+    code_type == "WIC" ~ "WI",
+    code_type == "FGC" ~ "FG",
+    code_type == "CCP" ~ "CP",
+    code_type == "GOV" ~ "GC",
+    code_type == "HNC" ~ "HN",
+    code_type == "PRC" ~ "PR",
+    code_type == "RTC" ~ "RT",
+    code_type == "UIC" ~ "UI",
+    TRUE ~ code_type)) %>%
+  mutate(charge_original_svc = charge,
+         charge = toupper(gsub("\\/|\\(|\\)| |\\.|\\.*|^[A-Z]*|\\\\.*|\\*|\\\r\\\n| \\+ Felony|-.*","", charge))) %>%
+  distinct(code_type, charge, charge_level, .keep_all = T) %>%
+  select(code_type, charge, charge_level, serious, violent) %>%
+  mutate(serious = if_else(is.na(serious), 0, 1),
+          violent = if_else(is.na(violent), 0, 1))
+
+
+
+
+
+```
+
+
+
+
+# import OBTS data
+```{r}
+df <- read.table("OBTS2017_withID.txt", sep = "\t", header = FALSE)
+
+ref_df <- read.csv("OBTS Code.csv")
+  
+ref_df <- ref_df %>%
+  unite(NAME, c(FIELD.NAME, SEGMENT)) %>%
+  separate(CODE.AND.DESCRIPTION, c("CODE", "DESCRIPTION"), sep = " - ") %>%
+  mutate(DESCRIPTION = if_else(is.na(DESCRIPTION), CODE, DESCRIPTION))
+
+ref_1 <- ref_df %>%
+  mutate(POSITION = gsub("[0-9]*-","", POSITION)) %>%
+  group_by(NAME) %>%
+  mutate(POSITION = as.numeric(min(POSITION))) %>%
+  distinct(NAME, POSITION) %>%
+  ungroup()
+
+ref_2 <- ref_df %>%
+  select(NAME, CODE, DESCRIPTION) %>%
+  distinct(NAME, CODE, .keep_all = TRUE)
+
+df <- df %>%
+  separate(V1, into = ref_1$NAME, sep = ref_1$POSITION, fill = NA)
+
+df <- df[1:41]
+
+df <- df %>%
+  mutate(row = row_number()) %>%
+  gather(NAME, CODE, -row) %>%
+  left_join(ref_2) %>%
+  mutate(CODE = if_else(is.na(DESCRIPTION), CODE, DESCRIPTION)) %>%
+  select(-DESCRIPTION) %>%
+  spread(NAME, CODE)
+```
+
+# import masked data, demographic data, and county data
+```{r}
+load("Masked Sample for Jeffrey.RData")
+setwd("G:/CrimJustice/Dispositions by Race and Ethnicity/Code")
+
+ca_age <- read_xlsx("P1_Age_1yr_interim.xlsx")
+ca_eth <- read_xlsx("Web_ACS2017_Pop-Race.Xlsx", sheet = 3)
+
+load("counties.RData")
+```
+
+# tidy obts data
+```{r}
+# change name
+obts <- df2
+
+# check variable types
+str(obts)
+
+obts <- obts %>%
+  # shorten all spaces to one space
+  mutate_all(funs(gsub("\\s+", " ", .))) %>%
+  
+  # convert variable types
+  mutate_at(vars(`Summary Code_Arrest Record`, `Summary Code_Court Record`), as.integer) %>%
+  mutate_at(vars(`Date of Birth_Personal Descriptor Record (PDR)`, `Date of Court Event_Court Record`), funs(as.Date(., "%Y%m%d"))) %>%
+  mutate(`Gender_Personal Descriptor Record (PDR)` = as.factor(`Gender_Personal Descriptor Record (PDR)`),
+         
+         # add age column
+         Age = as.integer((`Date of Court Event_Court Record` - `Date of Birth_Personal Descriptor Record (PDR)`) / 365.25),
+         # add age category column
+         `Age Category` = as.factor(case_when(
+           Age > 14 & Age <= 19 ~ "15-19 yrs",
+           Age > 19 & Age <= 29 ~ "20-29 yrs",
+           Age > 29 & Age <= 39 ~ "30-39 yrs",
+           Age > 39 & Age <= 49 ~ "40-49 yrs",
+           Age > 49 & Age <= 59 ~ "50-59 yrs",
+           TRUE ~ "60+ yrs"
+         )),
+         
+         # convert variable types
+         `Date of Birth_Personal Descriptor Record (PDR)` = as.character(`Date of Birth_Personal Descriptor Record (PDR)`),
+         `Date of Court Event_Court Record` = as.character(`Date of Court Event_Court Record`),
+         
+         # recode variables
+         `Bypass_Arrest Record` = if_else(`Bypass_Arrest Record` == " ", "No Bypass needed", `Bypass_Arrest Record`),
+         `Race/ethnic Group_Personal Descriptor Record (PDR)` = as.factor(case_when(
+           `Race/ethnic Group_Personal Descriptor Record (PDR)` == "N" ~ "Black",
+           `Race/ethnic Group_Personal Descriptor Record (PDR)` == "M" ~ "Hispanic",
+           `Race/ethnic Group_Personal Descriptor Record (PDR)` %in% c("Chinese", "Japanese", "Filipino", "Pacific Islander (beginning 1984)", "Other Asian", "Cambodian", "Guamanian", "Korean", "Laotian", "Samoan", "Hawaiian", "Vietnamese", "Asian Indian") ~ "Asian/PI",
+           `Race/ethnic Group_Personal Descriptor Record (PDR)` %in% c("Other", "Unknown") ~ "Other/Unknown",
+           TRUE ~ `Race/ethnic Group_Personal Descriptor Record (PDR)`
+         )),
+         `Prior Record Code_Arrest Record` = as.factor(case_when(
+           `Prior Record Code_Arrest Record` %in% c("One prior prison commitment", "Two prior prison commitments", "Three or more prior prison commitments") ~ "Prior prison",
+           `Prior Record Code_Arrest Record` == " " ~ "Lengthy record (prior to 1982)",
+           TRUE ~ `Prior Record Code_Arrest Record`
+           )),
+         `Type of Proceeding_Court Record` = if_else(`Type of Proceeding_Court Record` == " ", "If court disposition present, agency did not provide", `Type of Proceeding_Court Record`),
+         `Summary Code_Court Record` = as.factor(case_when(
+           `Summary Code_Court Record` %in% 1:7 ~ "F-violent offense",
+           `Summary Code_Court Record` %in% c(8:11, 24) ~ "F-property offense",
+           `Summary Code_Court Record` %in% 12:15 ~ "F-drug offense",
+           `Summary Code_Court Record` %in% 16:18 ~ "F-other sexual offense",
+           `Summary Code_Court Record` %in% c(19:23, 25:28) ~ "F-other offense",
+           `Summary Code_Court Record` %in% 29:30 ~ "M-violent offense",
+           `Summary Code_Court Record` %in% c(31:33, 64) ~ "M-property offense",
+           `Summary Code_Court Record` %in% 34:36 ~ "M-drug offense",
+           `Summary Code_Court Record` %in% 37:41 ~ "M-other sexual offense",
+           `Summary Code_Court Record` %in% c(42:63, 65:67, 74, 76) ~ "M-other offense",
+           `Summary Code_Court Record` %in% c(68:72) ~ "S-status offense"
+         )),
+         `Summary Code_Arrest Record` = as.factor(case_when(
+           `Summary Code_Arrest Record` %in% 1:7 ~ "F-violent offense",
+           `Summary Code_Arrest Record` %in% c(8:11, 24) ~ "F-property offense",
+           `Summary Code_Arrest Record` %in% 12:15 ~ "F-drug offense",
+           `Summary Code_Arrest Record` %in% 16:18 ~ "F-other sexual offense",
+           `Summary Code_Arrest Record` %in% c(19:23, 25:28) ~ "F-other offense"
+         )),
+         `Type of Court Disposition_Court Record` = if_else(`Type of Court Disposition_Court Record` == 22, "Acquitted", `Type of Court Disposition_Court Record`),
+         `Sentence_Court Record` = as.factor(case_when(
+           `Sentence_Court Record` %in% c("Death", "Prison (California Dept. of Corrections and Rehabilitation)") ~ "Prison",
+           `Sentence_Court Record` == "Prison term suspended (considered as probation)" ~ "Probation",
+           `Sentence_Court Record` %in% c("DJJ (Division of Juvenile Justice, formerly CYA)", "DJJ (Division of Juvenile Justice, formerly CYA )", "CRC (California Rehabilitation Center)", "MDSO (Mentally Disordered Sex Offender)", "Other: Entire sentence suspended, work program, volunteer program, no sentence given") ~ "Other",
+           `Type of Court Disposition_Court Record` %in% c("Acquitted", "Dismissed") ~ "Acquitted/Dismissed",
+           `Sentence_Court Record` == " " ~ NA_character_,
+           TRUE ~ `Sentence_Court Record`
+         )),
+         `Type of Sentence_Court Record` = case_when(
+           `Type of Sentence_Court Record` == " " ~ "If court disposition present, agency did not provide",
+           `Type of Sentence_Court Record` == "Felony convicted offense/felony sentence. superior court only (felony level of conviction)" ~ "Felony conviction, felony sentence",
+           `Type of Sentence_Court Record` %in% c("Felony convicted offense/misdemeanor sentence, superior court only (misdemeanor level of conviction)", "Felony convicted offense/misdemeanor per 17 PC, lower or superior court (misdemeanor level of conviction)") ~ "Felony conviction, misdemeanor sentence",
+           `Type of Sentence_Court Record` %in% c("Misdemeanor convicted offense, lower or superior court (misdemeanor level of conviction)", "Original 17(b)(4) PC filing closes as 17(b)(4) PC lower court only (misdemeanor level of conviction)") ~ "Misdemeanor conviction, misdemeanor sentence",
+           `Type of Sentence_Court Record` == "Infraction convicted offense lower or superior court (infraction level of conviction)" ~ "Infraction conviction, infraction sentence"
+         ),
+         `Multiple Arrest Charges_Arrest Record` = as.integer(case_when(
+           `Multiple Arrest Charges_Arrest Record` == "Only one offense (1982-1985)" ~ 1,
+           `Multiple Arrest Charges_Arrest Record` == "More than one offense (1982-1985)" ~ 2,
+           TRUE ~ as.double(`Multiple Arrest Charges_Arrest Record`)
+         )),
+         `Multiple Disposition Charges_Court Record` = as.integer(case_when(
+           `Multiple Disposition Charges_Court Record` == "Only one offense (1982-1986)" ~ 1,
+           `Multiple Disposition Charges_Court Record` == "More than one offense" ~ 2,
+           TRUE ~ as.double(`Multiple Disposition Charges_Court Record`)
+         )),
+         
+         # add county code column
+         `County Code` = as.integer(sub("\\D*(\\d{2}).*", "\\1", `Arresting Agency_Arrest Record`))) %>%
+  
+  # merge data frames
+  left_join(counties) %>%
+  
+  # replace all blank cells with NAs
+  na_if(" ") %>%
+  
+  # remove unused levels
+  droplevels()
+```
+
+# tidy ca_age data
+```{r}
+setwd("G:/CrimJustice/Dispositions by Race and Ethnicity/Code")
+ca_age <- read_xlsx("P1_Age_1yr_interim_2019.xlsx")
+
+ca_age_full <- ca_age %>%
+  # extract columns
+  select(`Total Estimated and Projected Population of California: July 1, 2010 to July 1, 2060 in 1-year Increments`, `...10`) %>%
+  
+  # rename column names
+  rename(Age = 1, `2018` = 2) %>%
+  
+  # remove rows
+  slice(-c(1:4, 106)) %>%
+  
+  # recode variable
+  mutate(`2018` = as.integer(`2018`),
+          Age = as.integer(if_else(Age == "100+", "100", Age)),
+         
+         # add age category column
+         `Age Category` = as.factor(case_when(
+           Age <= 14 ~ "0-14 yrs",
+           Age > 14 & Age <= 19 ~ "15-19 yrs",
+           Age > 19 & Age <= 29 ~ "20-29 yrs",
+           Age > 29 & Age <= 39 ~ "30-39 yrs",
+           Age > 39 & Age <= 49 ~ "40-49 yrs",
+           Age > 49 & Age <= 59 ~ "50-59 yrs",
+           TRUE ~ "60+ yrs"
+         ))) 
+
+ca_age18 <- ca_age %>%
+  # extract columns
+  select(`Total Estimated and Projected Population of California: July 1, 2010 to July 1, 2060 in 1-year Increments`, `...10`) %>%
+  
+  # rename column names
+  rename(Age = 1, `2018` = 2) %>%
+  
+  # remove rows
+  slice(-c(1:4, 106)) %>%
+  
+  # recode variable
+  mutate(`2018` = as.integer(`2018`),
+          Age = as.integer(if_else(Age == "100+", "100", Age)),
+         
+         # add age category column
+         `Age Category` = as.factor(case_when(
+           Age <= 17 ~ "0-17 yrs",
+           Age > 17 & Age <= 19 ~ "18-19 yrs",
+           Age > 19 & Age <= 29 ~ "20-29 yrs",
+           Age > 29 & Age <= 39 ~ "30-39 yrs",
+           Age > 39 & Age <= 49 ~ "40-49 yrs",
+           Age > 49 & Age <= 59 ~ "50-59 yrs",
+           TRUE ~ "60+ yrs"
+         ))) %>%
+  
+  # add frequency column
+  group_by(`Age Category`) %>%
+  summarise(Frequency = sum(`2018`)) %>%
+  
+  # add percentage column
+  mutate(Percentage = Frequency / sum(Frequency) * 100)
+
+ca_age <- ca_age %>%
+  # extract columns
+  select(`Total Estimated and Projected Population of California: July 1, 2010 to July 1, 2060 in 1-year Increments`, `...10`) %>%
+  
+  # rename column names
+  rename(Age = 1, `2018` = 2) %>%
+  
+  # remove rows
+  slice(-c(1:4, 106)) %>%
+  
+  # recode variable
+  mutate(`2018` = as.integer(`2018`),
+          Age = as.integer(if_else(Age == "100+", "100", Age)),
+         
+         # add age category column
+         `Age Category` = as.factor(case_when(
+           Age <= 14 ~ "0-14 yrs",
+           Age > 14 & Age <= 19 ~ "15-19 yrs",
+           Age > 19 & Age <= 29 ~ "20-29 yrs",
+           Age > 29 & Age <= 39 ~ "30-39 yrs",
+           Age > 39 & Age <= 49 ~ "40-49 yrs",
+           Age > 49 & Age <= 59 ~ "50-59 yrs",
+           TRUE ~ "60+ yrs"
+         ))) %>%
+  
+  # add frequency column
+  group_by(`Age Category`) %>%
+  summarise(Frequency = sum(`2018`)) %>%
+  
+  # add percentage column
+  mutate(Percentage = Frequency / sum(Frequency) * 100)
+```
+
+# tidy ca_eth data
+```{r}
+setwd("G:/CrimJustice/Dispositions by Race and Ethnicity/Code")
+ca_eth <- read_xlsx("P1_Race_Ethnicity_1yr_interim_2019.xlsx")
+
+ca_eth <- ca_eth %>%
+  select(`Total Estimated and Projected Population for California: July 1, 2010 to July 1, 2060 in 1-year Increments`, `...10`) %>%
+  rename(Race.Eth = 1, `2018` = 2) %>%
+  slice(-1:-4, -11, -13, -14) %>%
+  mutate(`Race.Eth` = ifelse(`Race.Eth` == "Any race", "Hispanic, Any race", `Race.Eth`), `2018` = as.integer(`2018`)) %>%
+  # add percentage column
+  mutate(Percentage = `2018` / sum(`2018`) * 100)
+  
+```
+
+# create defendant dataframe
+```{r}
+included_races <- c("Black", "White", "Hispanic", "Asian/PI")
+
+obts_def <- obts %>%
+  # remove duplicate rows
+  distinct() %>%
+  
+  
+  
+
+  # filter data
+  filter(!is.na(`Type of Court Disposition_Court Record`), !is.na(`CII Number_Personal Descriptor Record (PDR)`), `Gender_Personal Descriptor Record (PDR)`!="Other", `Race/ethnic Group_Personal Descriptor Record (PDR)`%in% included_races) %>%
+  # recode variables
+  mutate(`Summary Code_Arrest Record` = as.factor(case_when(
+    `Summary Code_Arrest Record` == "F-drug offense" ~ "Drug",
+    `Summary Code_Arrest Record` %in% c("F-other offense", "F-other sexual offense") ~ "Other",
+    `Summary Code_Arrest Record` == "F-property offense" ~ "Property",
+    `Summary Code_Arrest Record` == "F-violent offense" ~ "Violent"
+  )),
+  `Sentence_Court Record` = as.factor(if_else(`Sentence_Court Record` %in% c("Probation and jail", "Probation", "Jail", "Fine"), "Intermediate Sentence", as.character(`Sentence_Court Record`)))) %>%
+  
+  # remove unused levels
+  droplevels()
+```
+
+# diagram
+```{r}
+# type of court dispositions
+write.csv(table(obts_def$`Type of Court Disposition_Court Record`), "type of court dispositions.csv")
+
+# sentence
+write.csv(table(obts_def$`Sentence_Court Record`), "sentence.csv")
+```
+
+# summary table
+```{r}
+# race/ethnicity
+write.csv(table(obts_def$`Race/ethnic Group_Personal Descriptor Record (PDR)`), "race and ethnicity.csv")
+
+# case outcomes
+write.csv(table(obts_def$`Race/ethnic Group_Personal Descriptor Record (PDR)`, obts_def$`Type of Court Disposition_Court Record`), "case outcome.csv")
+
+# sentence outcomes
+write.csv(table(obts_def$`Race/ethnic Group_Personal Descriptor Record (PDR)`, obts_def$`Sentence_Court Record`), "sentence outcome.csv")
+
+# offense
+write.csv(table(obts_def$`Race/ethnic Group_Personal Descriptor Record (PDR)`, obts_def$`Summary Code_Arrest Record`), "offense.csv")
+
+# prior record
+write.csv(table(obts_def$`Race/ethnic Group_Personal Descriptor Record (PDR)`, obts_def$`Prior Record Code_Arrest Record`), "prior.csv")
+
+# gender
+write.csv(table(obts_def$`Race/ethnic Group_Personal Descriptor Record (PDR)`, obts_def$`Gender_Personal Descriptor Record (PDR)`), "gender.csv")
+
+# average age
+write.csv(rbind(aggregate(Age ~ `Race/ethnic Group_Personal Descriptor Record (PDR)`, data = obts_def, FUN = mean), mean(obts_def$Age, na.rm = TRUE)), "age.csv")
+```
+
+# tables for plots to be created in Excel
+```{r}
+# figure 1
+write.csv(table(obts$`Race/ethnic Group_Personal Descriptor Record (PDR)`), "fig1 Race_Ethnicity (All Felony Charges).csv")
+
+write.csv(table(obts[!is.na(obts$`Type of Court Disposition_Court Record`), ]$`Race/ethnic Group_Personal Descriptor Record (PDR)`), "fig1 Race_Ethnicity (Court).csv")
+
+write.csv(table(obts[obts$`Type of Court Disposition_Court Record` == "Convicted", ]$`Race/ethnic Group_Personal Descriptor Record (PDR)`), "fig1 Race_Ethnicity (Convicted).csv")
+
+write.csv(table(obts[obts$`Sentence_Court Record` == "Prison", ]$`Race/ethnic Group_Personal Descriptor Record (PDR)`), "fig1 Race_Ethnicity (Prison).csv")
+
+# figure 2
+write.csv(table(obts_def$`Age Category`), "fig2 Age Category.csv")
+
+# figure 3
+write.csv(table(obts_def$`Race/ethnic Group_Personal Descriptor Record (PDR)`), "fig3 Race_Ethnicity.csv")
+
+# figure 4
+write.csv(table(obts_def$`Prior Record Code_Arrest Record`), "fig4 Prior Record.csv")
+
+# figure 5
+write.csv(table(obts_def$`Summary Code_Arrest Record`), "fig5 Arrest Record.csv")
+
+# figure 6
+write.csv(table(obts_def$`Prior Record Code_Arrest Record`, obts_def$`Type of Court Disposition_Court Record`), "fig6 Convicted (Prior Record).csv")
+
+write.csv(table(obts_def$`Summary Code_Arrest Record`, obts_def$`Type of Court Disposition_Court Record`), "fig6 Convicted (Arrest Record).csv")
+
+# figure 7
+write.csv(table(obts_def$`Race/ethnic Group_Personal Descriptor Record (PDR)`, obts_def$`Type of Court Disposition_Court Record`), "fig7 Convicted (Race and Ethnicity).csv")
+
+# figure 8
+# calculated from odds ratios
+
+# figure 9
+obts_def %>%
+  filter(`Summary Code_Arrest Record` == "Violent") %>%
+  group_by(`Race/ethnic Group_Personal Descriptor Record (PDR)`, `Prior Record Code_Arrest Record`, `Type of Court Disposition_Court Record`) %>%
+  tally() %>%
+  write.csv("fig9 Violent (Convicted).csv")
+
+obts_def %>%
+  filter(`Summary Code_Arrest Record` == "Drug") %>%
+  group_by(`Race/ethnic Group_Personal Descriptor Record (PDR)`, `Prior Record Code_Arrest Record`, `Type of Court Disposition_Court Record`) %>%
+  tally() %>%
+  write.csv("fig9 Drug (Convicted).csv")
+
+obts_def %>%
+  filter(`Summary Code_Arrest Record` == "Property") %>%
+  group_by(`Race/ethnic Group_Personal Descriptor Record (PDR)`, `Prior Record Code_Arrest Record`, `Type of Court Disposition_Court Record`) %>%
+  tally() %>%
+  write.csv("fig9 Property (Convicted).csv")
+
+# figure 10
+write.csv(table(obts_def$`Prior Record Code_Arrest Record`, obts_def$`Sentence_Court Record`), "fig10 Prison (Prior Record).csv")
+
+write.csv(table(obts_def$`Summary Code_Arrest Record`, obts_def$`Sentence_Court Record`), "fig10 Prison (Arrest Record).csv")
+
+# figure 11
+write.csv(table(obts_def$`Race/ethnic Group_Personal Descriptor Record (PDR)`, obts_def$`Sentence_Court Record`), "fig10 Prison (Race and Ethnicity).csv")
+
+# figure 12
+# calculated from odds ratios
+
+# figure 13
+obts_def %>%
+  filter(`Summary Code_Arrest Record` == "Violent") %>%
+  group_by(`Race/ethnic Group_Personal Descriptor Record (PDR)`, `Prior Record Code_Arrest Record`, `Sentence_Court Record`) %>%
+  tally() %>%
+  write.csv("fig13 Violent (Prison).csv")
+
+obts_def %>%
+  filter(`Summary Code_Arrest Record` == "Drug") %>%
+  group_by(`Race/ethnic Group_Personal Descriptor Record (PDR)`, `Prior Record Code_Arrest Record`, `Sentence_Court Record`) %>%
+  tally() %>%
+  write.csv("fig13 Drug (Prison).csv")
+
+obts_def %>%
+  filter(`Summary Code_Arrest Record` == "Property") %>%
+  group_by(`Race/ethnic Group_Personal Descriptor Record (PDR)`, `Prior Record Code_Arrest Record`, `Sentence_Court Record`) %>%
+  tally() %>%
+  write.csv("fig13 Property (Prison).csv")
+```
+
+# ideas
+```{r}
+# felony vs. misdemeanor conviction (separated)
+write.csv(table(obts_def$`Prior Record Code_Arrest Record`, obts_def$`Summary Code_Court Record`), "Felony Conviction (Prior Record, Separated).csv")
+
+write.csv(table(obts_def$`Summary Code_Arrest Record`, obts_def$`Summary Code_Court Record`), "\Felony Conviction (Arrest Record, Separated).csv")
+
+write.csv(table(obts_def$`Race/ethnic Group_Personal Descriptor Record (PDR)`, obts_def$`Summary Code_Court Record`), "Felony Conviction (Race and Ethnicity, Separated).csv")
+
+obts_def %>%
+  filter(`Summary Code_Arrest Record` == "Violent") %>%
+  group_by(`Race/ethnic Group_Personal Descriptor Record (PDR)`, `Prior Record Code_Arrest Record`, `Summary Code_Court Record`) %>%
+  tally() %>%
+  write.csv("Violent (Felony Conviction, Separated).csv")
+
+obts_def %>%
+  filter(`Summary Code_Arrest Record` == "Drug") %>%
+  group_by(`Race/ethnic Group_Personal Descriptor Record (PDR)`, `Prior Record Code_Arrest Record`, `Summary Code_Court Record`) %>%
+  tally() %>%
+  write.csv("Drug (Felony Conviction, Separated).csv")
+
+obts_def %>%
+  filter(`Summary Code_Arrest Record` == "Property") %>%
+  group_by(`Race/ethnic Group_Personal Descriptor Record (PDR)`, `Prior Record Code_Arrest Record`, `Summary Code_Court Record`) %>%
+  tally() %>%
+  write.csv("Property (Felony Conviction, Separated).csv")
+
+# felony vs. misdemeanor conviction (grouped)
+write.csv(table(obts_def$`Prior Record Code_Arrest Record`, obts_def$`Type of Charge_Court Record`), "Felony Conviction (Prior Record, Grouped).csv")
+
+write.csv(table(obts_def$`Summary Code_Arrest Record`, obts_def$`Type of Charge_Court Record`), "Felony Conviction (Arrest Record, Grouped).csv")
+
+write.csv(table(obts_def$`Race/ethnic Group_Personal Descriptor Record (PDR)`, obts_def$`Type of Charge_Court Record`), "Felony Conviction (Race and Ethnicity, Grouped).csv")
+
+obts_def %>%
+  filter(`Summary Code_Arrest Record` == "Violent") %>%
+  group_by(`Race/ethnic Group_Personal Descriptor Record (PDR)`, `Prior Record Code_Arrest Record`, `Type of Charge_Court Record`) %>%
+  tally() %>%
+  write.csv("Violent (Felony Conviction, Grouped).csv")
+
+obts_def %>%
+  filter(`Summary Code_Arrest Record` == "Drug") %>%
+  group_by(`Race/ethnic Group_Personal Descriptor Record (PDR)`, `Prior Record Code_Arrest Record`, `Type of Charge_Court Record`) %>%
+  tally() %>%
+  write.csv("Drug (Felony Conviction, Grouped).csv")
+
+obts_def %>%
+  filter(`Summary Code_Arrest Record` == "Property") %>%
+  group_by(`Race/ethnic Group_Personal Descriptor Record (PDR)`, `Prior Record Code_Arrest Record`, `Type of Charge_Court Record`) %>%
+  tally() %>%
+  write.csv("Property (Felony Conviction, Grouped).csv")
+
+# race/ethnicity by county
+write.csv(table(obts$`Race/ethnic Group_Personal Descriptor Record (PDR)`, obts$County), "Race_Ethnicity by County.csv")
+```
+
+# tidy for regression models
+```{r}
+
+
+obts_def2 <- obts_def %>%
+  # relevel variable
+  mutate(`Type of Charge_Court Record` = as.factor(`Type of Charge_Court Record`),
+         `Race/ethnic Group_Personal Descriptor Record (PDR)` = relevel(`Race/ethnic Group_Personal Descriptor Record (PDR)`, "White"),
+         
+         # recode variable
+         `Sentence_Court Record2` = as.factor(if_else(`Sentence_Court Record` %in% c("Prison", "Intermediate Sentence"), "Guilty", as.character(`Sentence_Court Record`)))) %>%
+  
+  # extract columns
+  select(20, 23, 25, 29, 32, 34:36, 39, 43, 47, 46) %>%
+  
+  # remove rows with NAs
+  na.omit() %>%
+  
+  # remove unused levels
+  droplevels()
+
+#check whether there are a lot of "lengthy record" cases
+summary(obts_def2$`Prior Record Code_Arrest Record`)
+#if not, remove the "lengthy record" cases
+#obts_def2 = filter(obts_def2,`Prior Record Code_Arrest Record` != "Lengthy record (prior to 1982)")
+
+#set desired base levels of variables
+
+obts_def2$`Gender_Personal Descriptor Record (PDR)` <- relevel(obts_def2$`Gender_Personal Descriptor Record (PDR)`, ref="Male")
+obts_def2$`Prior Record Code_Arrest Record` <- relevel(obts_def2$`Prior Record Code_Arrest Record`, ref="No prior record")
+obts_def2$`Summary Code_Arrest Record` <- relevel(obts_def2$`Summary Code_Arrest Record`, ref="Property")
+obts_def2$County <- as.factor(obts_def2$County)
+obts_def2$County <- relevel(obts_def2$County, ref ="Los Angeles County")
+
+
+obts_def_convicted <- obts_def2 %>%
+  # filter data
+  filter(`Sentence_Court Record2` == "Guilty") %>%
+  
+  # remove rows with NAs
+  na.omit() %>%
+  
+  # remove unused levels
+  droplevels()
+
+obts_def_felonycharge <- obts_def_convicted %>%
+  # filter data
+  filter(`Type of Charge_Court Record` == "Felony") %>%
+  
+  # remove rows with NAs
+  na.omit() %>%
+  
+  # remove unused levels
+  droplevels()
+```
+
+# conviction stats
+```{r conviction stuff}
+# fit model with legal factors
+conv_legal <- glm(`Sentence_Court Record2` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Arrest Charges_Arrest Record`, data = obts_def2, family = 'binomial')
+
+summary(conv_legal)
+
+# fit model with legal factors and gender and age
+conv_legsoc <- glm(`Sentence_Court Record2` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Arrest Charges_Arrest Record` + Age + `Gender_Personal Descriptor Record (PDR)`, data = obts_def2, family = 'binomial')
+
+summary(conv_legsoc)
+
+anova(conv_legal, conv_legsoc)
+
+# fit model add race
+conv_legsocrac <- glm(`Sentence_Court Record2` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Arrest Charges_Arrest Record` + Age + `Gender_Personal Descriptor Record (PDR)` +`Race/ethnic Group_Personal Descriptor Record (PDR)`, data = obts_def2, family = 'binomial')
+
+summary(conv_legsocrac)
+
+anova(conv_legsoc, conv_legsocrac)
+
+#fit model just without race
+
+conv_norace <- glm(`Sentence_Court Record2` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Arrest Charges_Arrest Record` + Age + `Gender_Personal Descriptor Record (PDR)`, data = obts_def2, family = 'binomial')
+
+summary(conv_norace)
+
+anova(conv_norace, conv_legsocrac)
+
+#add county fixed
+
+conv_county <- glm(`Sentence_Court Record2` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Arrest Charges_Arrest Record` + Age + `Gender_Personal Descriptor Record (PDR)` +`Race/ethnic Group_Personal Descriptor Record (PDR)`+ County, data = obts_def2, family = 'binomial')
+
+summary(conv_county)
+
+anova(conv_legsocrac, conv_county)
+
+#add county random
+
+#random intercept by county
+conv_countyintercept = glmer(`Sentence_Court Record2` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Arrest Charges_Arrest Record` + Age + `Gender_Personal Descriptor Record (PDR)` +`Race/ethnic Group_Personal Descriptor Record (PDR)`+ (1|County), data = obts_def2, family = 'binomial');
+
+summary(conv_countyintercept)
+coef(conv_countyintercept)
+
+#plot by county
+
+(ggplot(obts_def2, aes(x=`Prior Record Code_Arrest Record`, y=`Sentence_Court Record2`, fill=`Race/ethnic Group_Personal Descriptor Record (PDR)`))
+     #tell ggplot what data is, and x and y variables
+     +facet_wrap(~County,ncol=5,scales='free')
+     #add a wrapping by unique combos of 2 variable
+     #set num columns, and vary scales per facet.
+     +geom_point()
+     #add the points as representations
+     +stat_smooth(method='glm', aes(group=1))
+     #add the fits.
+)
+
+#random slope of priors by county
+conv_countyslopepriors = glmer(`Sentence_Court Record2` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Arrest Charges_Arrest Record` + Age + `Gender_Personal Descriptor Record (PDR)` +`Race/ethnic Group_Personal Descriptor Record (PDR)`+ (1 + `Prior Record Code_Arrest Record`|County), data = obts_def2, family = 'binomial');
+
+summary(conv_countyslopepriors)
+coef(conv_countyslopepriors)
+
+#random slope of race by county
+conv_countysloperace = glmer(`Sentence_Court Record2` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Arrest Charges_Arrest Record` + Age + `Gender_Personal Descriptor Record (PDR)` +`Race/ethnic Group_Personal Descriptor Record (PDR)`+ (1 + `Race/ethnic Group_Personal Descriptor Record (PDR)`|County), data = obts_def2, family = 'binomial');
+
+summary(conv_countysloperace)
+coef(conv_countysloperace)
+
+
+#crime severity
+
+conv_serious <- glm(`Sentence_Court Record2` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Arrest Charges_Arrest Record` + Age + `Gender_Personal Descriptor Record (PDR)` +`Race/ethnic Group_Personal Descriptor Record (PDR)`+ Serious, data = obts_def2, family = 'binomial')
+
+summary(conv_serious)
+
+anova(conv_legsocrac, conv_serious)
+
+conv_violent <- glm(`Sentence_Court Record2` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Arrest Charges_Arrest Record` + Age + `Gender_Personal Descriptor Record (PDR)` +`Race/ethnic Group_Personal Descriptor Record (PDR)`+ Violent, data = obts_def2, family = 'binomial')
+
+summary(conv_violent)
+
+anova(conv_legsocrac, conv_violent)
+
+#chunk out hierarchy?
+
+conv_hierarchy <- glm(`Sentence_Court Record2` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Arrest Charges_Arrest Record` + Age + `Gender_Personal Descriptor Record (PDR)` +`Race/ethnic Group_Personal Descriptor Record (PDR)`+ Hierarchy, data = obts_def2, family = 'binomial')
+
+summary(conv_hierarchy)
+
+anova(conv_legsocrac, conv_hierarchy)
+
+
+#tables for each offense type prior record by race
+write.csv(table(obts_def$`Race/ethnic Group_Personal Descriptor Record (PDR)`, obts_def$`Type of Charge_Court Record`), "Felony Conviction (Race and Ethnicity, Grouped).csv")
+
+with(filter(obts_def2,`Summary Code_Arrest Record` == "Violent"), table(`Sentence_Court Record2`,`Race/ethnic Group_Personal Descriptor Record (PDR)`, `Prior Record Code_Arrest Record`))
+
+with(filter(obts_def2,`Summary Code_Arrest Record` == "Property"), table(`Sentence_Court Record2`,`Race/ethnic Group_Personal Descriptor Record (PDR)`, `Prior Record Code_Arrest Record`))
+
+
+with(filter(obts_def2,`Summary Code_Arrest Record` == "Drug"), table(`Sentence_Court Record2`,`Race/ethnic Group_Personal Descriptor Record (PDR)`, `Prior Record Code_Arrest Record`))
+
+#make csv files for these tables
+with(filter(obts_def2,`Summary Code_Arrest Record` == "Violent"), write.csv(table(`Sentence_Court Record2`,`Race/ethnic Group_Personal Descriptor Record (PDR)`, `Prior Record Code_Arrest Record`), "Violent: Conviction by race and priors"))
+
+with(filter(obts_def2,`Summary Code_Arrest Record` == "Property"), write.csv(table(`Sentence_Court Record2`,`Race/ethnic Group_Personal Descriptor Record (PDR)`, `Prior Record Code_Arrest Record`), "Property: Conviction by race and priors"))
+
+with(filter(obts_def2,`Summary Code_Arrest Record` == "Drug"), write.csv(table(`Sentence_Court Record2`,`Race/ethnic Group_Personal Descriptor Record (PDR)`, `Prior Record Code_Arrest Record`), "Drug: Conviction by race and priors"))
+
+```
+
+
+## Pseudo R2 conviction
+```{r pseudo r2 conviction}
+conv_norace <- glm(`Sentence_Court Record2` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Arrest Charges_Arrest Record` + Age + `Gender_Personal Descriptor Record (PDR)`, data = obts_def2, family = 'binomial')
+
+conv_full <- glm(`Sentence_Court Record2` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Arrest Charges_Arrest Record` + Age + `Gender_Personal Descriptor Record (PDR)` +`Race/ethnic Group_Personal Descriptor Record (PDR)`, data = obts_def2, family = 'binomial')
+
+pR2(conv_norace)
+pR2(conv_full)
+
+conv_nopriors <- glm(`Sentence_Court Record2` ~  `Summary Code_Arrest Record` + `Multiple Arrest Charges_Arrest Record` + Age + `Gender_Personal Descriptor Record (PDR)` +`Race/ethnic Group_Personal Descriptor Record (PDR)`, data = obts_def2, family = 'binomial')
+
+pR2(conv_nopriors)
+
+conv_notype <- glm(`Sentence_Court Record2` ~ `Prior Record Code_Arrest Record` + `Multiple Arrest Charges_Arrest Record` + Age + `Gender_Personal Descriptor Record (PDR)` +`Race/ethnic Group_Personal Descriptor Record (PDR)`, data = obts_def2, family = 'binomial')
+
+pR2(conv_notype)
+
+conv_nomultiple <- glm(`Sentence_Court Record2` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record`  + Age + `Gender_Personal Descriptor Record (PDR)` +`Race/ethnic Group_Personal Descriptor Record (PDR)`, data = obts_def2, family = 'binomial')
+
+pR2(conv_nomultiple)
+
+conv_noage <- glm(`Sentence_Court Record2` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Arrest Charges_Arrest Record` + `Gender_Personal Descriptor Record (PDR)` +`Race/ethnic Group_Personal Descriptor Record (PDR)`, data = obts_def2, family = 'binomial')
+
+pR2(conv_noage)
+
+conv_nogender <- glm(`Sentence_Court Record2` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Arrest Charges_Arrest Record` + Age +`Race/ethnic Group_Personal Descriptor Record (PDR)`, data = obts_def2, family = 'binomial')
+
+pR2(conv_nogender)
+
+```
+
+
+##Charge reduction
+```{r felony v misdemeanor}
+
+#look at how many missing values there are for type of charge court record
+summary(obts_def_convicted$`Type of Charge_Court Record`)
+#cut people whose charge type we don't know
+obts_conv <- filter(obts_def_convicted, `Type of Charge_Court Record` !="Place holder codes")
+obts_conv <-droplevels(obts_conv)
+
+# fit model with legal factors
+charge_legal <- glm(`Type of Charge_Court Record` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Arrest Charges_Arrest Record`, data = obts_conv, family = 'binomial')
+
+summary(charge_legal)
+
+# fit model with legal factors and gender and age
+charge_legsoc <- glm(`Type of Charge_Court Record` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Arrest Charges_Arrest Record` + Age + `Gender_Personal Descriptor Record (PDR)`, data = obts_conv, family = 'binomial')
+
+summary(charge_legsoc)
+
+anova(charge_legal, charge_legsoc)
+
+# fit model add race
+charge_legsocrac <- glm(`Type of Charge_Court Record` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Arrest Charges_Arrest Record` + Age + `Gender_Personal Descriptor Record (PDR)` +`Race/ethnic Group_Personal Descriptor Record (PDR)`, data = obts_conv, family = 'binomial')
+
+summary(charge_legsocrac)
+
+anova(charge_legsoc, charge_legsocrac)
+
+#fit model just without race
+
+charge_norace <- glm(`Type of Charge_Court Record` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Arrest Charges_Arrest Record` + Age + `Gender_Personal Descriptor Record (PDR)`, data = obts_conv, family = 'binomial')
+
+summary(charge_norace)
+
+anova(charge_norace, charge_legsocrac)
+
+#add county fixed
+
+charge_county <- glm(`Type of Charge_Court Record` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Arrest Charges_Arrest Record` + Age + `Gender_Personal Descriptor Record (PDR)` +`Race/ethnic Group_Personal Descriptor Record (PDR)`+ County, data = obts_conv, family = 'binomial')
+
+summary(charge_county)
+
+anova(charge_legsocrac, charge_county)
+
+#add county random
+
+#random intercept by county
+charge_countyintercept = glmer(`Type of Charge_Court Record` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Arrest Charges_Arrest Record` + Age + `Gender_Personal Descriptor Record (PDR)` +`Race/ethnic Group_Personal Descriptor Record (PDR)`+ (1|County), data = obts_conv, family = 'binomial');
+
+summary(charge_countyintercept)
+coef(charge_countyintercept)
+
+#plot by county
+
+(ggplot(obts_conv, aes(x=`Prior Record Code_Arrest Record`, y=`Type of Charge_Court Record`, fill=`Race/ethnic Group_Personal Descriptor Record (PDR)`))
+     #tell ggplot what data is, and x and y variables
+     +facet_wrap(~County,ncol=5,scales='free')
+     #add a wrapping by unique combos of 2 variable
+     #set num columns, and vary scales per facet.
+     +geom_point()
+     #add the points as representations
+     +stat_smooth(method='glm', aes(group=1))
+     #add the fits.
+)
+
+#random slope of priors by county
+charge_countyslopepriors = glmer(`Type of Charge_Court Record` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Arrest Charges_Arrest Record` + Age + `Gender_Personal Descriptor Record (PDR)` +`Race/ethnic Group_Personal Descriptor Record (PDR)`+ (1 + `Prior Record Code_Arrest Record`|County), data = obts_conv, family = 'binomial');
+
+summary(charge_countyslopepriors)
+coef(charge_countyslopepriors)
+
+#random slope of race by county
+charge_countysloperace = glmer(`Type of Charge_Court Record` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Arrest Charges_Arrest Record` + Age + `Gender_Personal Descriptor Record (PDR)` +`Race/ethnic Group_Personal Descriptor Record (PDR)`+ (1 + `Race/ethnic Group_Personal Descriptor Record (PDR)`|County), data = obts_conv, family = 'binomial');
+
+summary(charge_countysloperace)
+coef(charge_countysloperace)
+
+
+#crime severity
+
+charge_serious <- glm(`Type of Charge_Court Record` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Arrest Charges_Arrest Record` + Age + `Gender_Personal Descriptor Record (PDR)` +`Race/ethnic Group_Personal Descriptor Record (PDR)`+ Serious, data = obts_conv, family = 'binomial')
+
+summary(charge_serious)
+
+anova(charge_legsocrac, charge_serious)
+
+charge_violent <- glm(`Type of Charge_Court Record` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Arrest Charges_Arrest Record` + Age + `Gender_Personal Descriptor Record (PDR)` +`Race/ethnic Group_Personal Descriptor Record (PDR)`+ Violent, data = obts_conv, family = 'binomial')
+
+summary(charge_violent)
+
+anova(charge_legsocrac, charge_violent)
+
+#chunk out hierarchy?
+
+charge_hierarchy <- glm(`Type of Charge_Court Record` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Arrest Charges_Arrest Record` + Age + `Gender_Personal Descriptor Record (PDR)` +`Race/ethnic Group_Personal Descriptor Record (PDR)`+ Hierarchy, data = obts_conv, family = 'binomial')
+
+summary(charge_hierarchy)
+
+anova(charge_legsocrac, charge_hierarchy)
+
+
+#tables for each offense type prior record by race
+
+with(filter(obts_conv,`Summary Code_Arrest Record` == "Violent"), table(`Type of Charge_Court Record`,`Race/ethnic Group_Personal Descriptor Record (PDR)`, `Prior Record Code_Arrest Record`))
+
+with(filter(obts_conv,`Summary Code_Arrest Record` == "Property"), table(`Type of Charge_Court Record`,`Race/ethnic Group_Personal Descriptor Record (PDR)`, `Prior Record Code_Arrest Record`))
+
+with(filter(obts_conv,`Summary Code_Arrest Record` == "Drug"), table(`Type of Charge_Court Record`,`Race/ethnic Group_Personal Descriptor Record (PDR)`, `Prior Record Code_Arrest Record`))
+
+#make csv files for these tables
+with(filter(obts_conv,`Summary Code_Arrest Record` == "Violent"), write.csv(table(`Type of Charge_Court Record`,`Race/ethnic Group_Personal Descriptor Record (PDR)`, `Prior Record Code_Arrest Record`), "Violent: Charge by race and priors"))
+
+with(filter(obts_conv,`Summary Code_Arrest Record` == "Property"), write.csv(table(`Type of Charge_Court Record`,`Race/ethnic Group_Personal Descriptor Record (PDR)`, `Prior Record Code_Arrest Record`), "Property: Charge by race and priors"))
+
+with(filter(obts_conv,`Summary Code_Arrest Record` == "Drug"), write.csv(table(`Type of Charge_Court Record`,`Race/ethnic Group_Personal Descriptor Record (PDR)`, `Prior Record Code_Arrest Record`), "Drug: Charge by race and priors"))
+
+```
+
+#pseudo r2 charge reducton
+```{r pseudo r2 charge reduction}
+charge_full <- glm(`Type of Charge_Court Record` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Arrest Charges_Arrest Record` + Age + `Gender_Personal Descriptor Record (PDR)` +`Race/ethnic Group_Personal Descriptor Record (PDR)`, data = obts_conv, family = 'binomial')
+
+charge_norace <- glm(`Type of Charge_Court Record` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Arrest Charges_Arrest Record` + Age + `Gender_Personal Descriptor Record (PDR)`, data = obts_conv, family = 'binomial')
+
+charge_nopriors <- glm(`Type of Charge_Court Record` ~  `Summary Code_Arrest Record` + `Multiple Arrest Charges_Arrest Record` + Age + `Gender_Personal Descriptor Record (PDR)` +`Race/ethnic Group_Personal Descriptor Record (PDR)`, data = obts_conv, family = 'binomial')
+
+charge_notype<- glm(`Type of Charge_Court Record` ~ `Prior Record Code_Arrest Record`+ `Multiple Arrest Charges_Arrest Record` + Age + `Gender_Personal Descriptor Record (PDR)` +`Race/ethnic Group_Personal Descriptor Record (PDR)`, data = obts_conv, family = 'binomial')
+
+charge_nomultiple <- glm(`Type of Charge_Court Record` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record`  + Age + `Gender_Personal Descriptor Record (PDR)` +`Race/ethnic Group_Personal Descriptor Record (PDR)`, data = obts_conv, family = 'binomial')
+
+charge_noage <- glm(`Type of Charge_Court Record` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Arrest Charges_Arrest Record` +  `Gender_Personal Descriptor Record (PDR)` +`Race/ethnic Group_Personal Descriptor Record (PDR)`, data = obts_conv, family = 'binomial')
+
+charge_nogender <- glm(`Type of Charge_Court Record` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Arrest Charges_Arrest Record` + Age  +`Race/ethnic Group_Personal Descriptor Record (PDR)`, data = obts_conv, family = 'binomial')
+
+pR2(charge_full)
+pR2(charge_norace)
+pR2(charge_nopriors)
+pR2(charge_notype)
+pR2(charge_nomultiple)
+pR2(charge_noage)
+pR2(charge_nogender)
+
+
+
+```
+
+
+
+
+##Sentencing
+```{r prison vs intermediate}
+
+# fit model with legal factors
+sentence_legal <- glm(`Sentence_Court Record` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Arrest Charges_Arrest Record`, data = obts_def_felonycharge, family = 'binomial')
+
+summary(sentence_legal)
+
+# fit model with additional legal factors from stepwise
+sentence_legal2 <- glm(`Sentence_Court Record` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Disposition Charges_Court Record` + `Summary Code_Court Record`, data = obts_def_felonycharge, family = 'binomial')
+
+summary(sentence_legal2)
+anova(sentence_legal, sentence_legal2)
+
+# fit model with legal factors and gender and age
+sentence_legsoc <- glm(`Sentence_Court Record` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Disposition Charges_Court Record` + `Summary Code_Court Record` + Age + `Gender_Personal Descriptor Record (PDR)`, data = obts_def_felonycharge, family = 'binomial')
+
+summary(sentence_legsoc)
+
+anova(sentence_legal2, sentence_legsoc)
+
+# fit model add race
+sentence_legsocrac <- glm(`Sentence_Court Record` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Disposition Charges_Court Record`+ `Summary Code_Court Record` + Age + `Gender_Personal Descriptor Record (PDR)` +`Race/ethnic Group_Personal Descriptor Record (PDR)`, data = obts_def_felonycharge, family = 'binomial')
+
+summary(sentence_legsocrac)
+
+anova(sentence_legsoc, sentence_legsocrac)
+
+#fit model just without race
+
+sentence_norace <- glm(`Sentence_Court Record` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Disposition Charges_Court Record`+ `Summary Code_Court Record` + Age + `Gender_Personal Descriptor Record (PDR)`, data = obts_def_felonycharge, family = 'binomial')
+
+summary(sentence_norace)
+
+anova(sentence_norace, sentence_legsocrac)
+
+#add county fixed
+
+sentence_county <- glm(`Sentence_Court Record` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Disposition Charges_Court Record`+ `Summary Code_Court Record` + Age + `Gender_Personal Descriptor Record (PDR)` +`Race/ethnic Group_Personal Descriptor Record (PDR)`+ County, data = obts_def_felonycharge, family = 'binomial')
+
+summary(sentence_county)
+
+anova(sentence_legsocrac, sentence_county)
+
+#add county random
+
+#random intercept by county
+sentence_countyintercept = glmer(`Sentence_Court Record` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Disposition Charges_Court Record`+ `Summary Code_Court Record` + Age + `Gender_Personal Descriptor Record (PDR)` +`Race/ethnic Group_Personal Descriptor Record (PDR)`+ (1|County), data = obts_def_felonycharge, family = 'binomial');
+
+summary(sentence_countyintercept)
+coef(sentence_countyintercept)
+
+#plot by county
+
+(ggplot(obts_def_felonycharge, aes(x=`Prior Record Code_Arrest Record`, y=`Sentence_Court Record`, fill=`Race/ethnic Group_Personal Descriptor Record (PDR)`))
+     #tell ggplot what data is, and x and y variables
+     +facet_wrap(~County,ncol=5,scales='free')
+     #add a wrapping by unique combos of 2 variable
+     #set num columns, and vary scales per facet.
+     +geom_point()
+     #add the points as representations
+     +stat_smooth(method='glm', aes(group=1))
+     #add the fits.
+)
+
+#random slope of priors by county
+sentence_countyslopepriors = glmer(`Sentence_Court Record` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Disposition Charges_Court Record`+ `Summary Code_Court Record` + Age + `Gender_Personal Descriptor Record (PDR)` +`Race/ethnic Group_Personal Descriptor Record (PDR)`+ (1 + `Prior Record Code_Arrest Record`|County), data = obts_def_felonycharge, family = 'binomial');
+
+summary(sentence_countyslopepriors)
+coef(sentence_countyslopepriors)
+
+#random slope of race by county
+sentence_countysloperace = glmer(`Sentence_Court Record` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Disposition Charges_Court Record`+ `Summary Code_Court Record` + Age + `Gender_Personal Descriptor Record (PDR)` +`Race/ethnic Group_Personal Descriptor Record (PDR)`+ (1 + `Race/ethnic Group_Personal Descriptor Record (PDR)`|County), data = obts_def_felonycharge, family = 'binomial');
+
+summary(sentence_countysloperace)
+coef(sentence_countysloperace)
+
+
+#crime severity
+
+sentence_serious <- glm(`Sentence_Court Record` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Disposition Charges_Court Record`+ `Summary Code_Court Record`+ Age + `Gender_Personal Descriptor Record (PDR)` +`Race/ethnic Group_Personal Descriptor Record (PDR)`+ Serious, data = obts_def_felonycharge, family = 'binomial')
+
+summary(sentence_serious)
+
+anova(sentence_legsocrac, sentence_serious)
+
+sentence_violent <- glm(`Sentence_Court Record` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Disposition Charges_Court Record`+ `Summary Code_Court Record` + Age + `Gender_Personal Descriptor Record (PDR)` +`Race/ethnic Group_Personal Descriptor Record (PDR)`+ Violent, data = obts_def_felonycharge, family = 'binomial')
+
+summary(sentence_violent)
+
+anova(sentence_legsocrac, sentence_violent)
+
+#chunk out hierarchy?
+
+sentence_hierarchy <- glm(`Sentence_Court Record` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Disposition Charges_Court Record`+ `Summary Code_Court Record` + Age + `Gender_Personal Descriptor Record (PDR)` +`Race/ethnic Group_Personal Descriptor Record (PDR)`+ Hierarchy, data = obts_def_felonycharge, family = 'binomial')
+
+summary(sentence_hierarchy)
+
+anova(sentence_legsocrac, sentence_hierarchy)
+
+
+#tables for each offense type prior record by race
+
+with(filter(obts_def_felonycharge,`Summary Code_Arrest Record` == "Violent"), table(`Sentence_Court Record`,`Race/ethnic Group_Personal Descriptor Record (PDR)`, `Prior Record Code_Arrest Record`))
+
+with(filter(obts_def_felonycharge,`Summary Code_Arrest Record` == "Property"), table(`Sentence_Court Record`,`Race/ethnic Group_Personal Descriptor Record (PDR)`, `Prior Record Code_Arrest Record`))
+
+with(filter(obts_def_felonycharge,`Summary Code_Arrest Record` == "Drug"), table(`Sentence_Court Record`,`Race/ethnic Group_Personal Descriptor Record (PDR)`, `Prior Record Code_Arrest Record`))
+
+#make csv files for these tables
+with(filter(obts_def_felonycharge,`Summary Code_Arrest Record` == "Violent"), write.csv(table(`Sentence_Court Record`,`Race/ethnic Group_Personal Descriptor Record (PDR)`, `Prior Record Code_Arrest Record`), "Violent: Sentence by race and priors"))
+
+with(filter(obts_def_felonycharge,`Summary Code_Arrest Record` == "Property"), write.csv(table(`Sentence_Court Record`,`Race/ethnic Group_Personal Descriptor Record (PDR)`, `Prior Record Code_Arrest Record`), "Property: Sentence by race and priors"))
+
+with(filter(obts_def_felonycharge,`Summary Code_Arrest Record` == "Drug"), write.csv(table(`Sentence_Court Record`,`Race/ethnic Group_Personal Descriptor Record (PDR)`, `Prior Record Code_Arrest Record`), "Drug: Sentence by race and priors"))
+
+```
+
+
+##pseudo r2 sentence
+```{r pseudo r2 sentence}
+
+sentence_full <- glm(`Sentence_Court Record` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Disposition Charges_Court Record`+ `Summary Code_Court Record` + Age + `Gender_Personal Descriptor Record (PDR)` +`Race/ethnic Group_Personal Descriptor Record (PDR)`, data = obts_def_felonycharge, family = 'binomial')
+
+sentence_nopriors <- glm(`Sentence_Court Record` ~ `Summary Code_Arrest Record` + `Multiple Disposition Charges_Court Record`+ `Summary Code_Court Record` + Age + `Gender_Personal Descriptor Record (PDR)` +`Race/ethnic Group_Personal Descriptor Record (PDR)`, data = obts_def_felonycharge, family = 'binomial')
+
+sentence_noarresttype <- glm(`Sentence_Court Record` ~ `Prior Record Code_Arrest Record`  + `Multiple Disposition Charges_Court Record`+ `Summary Code_Court Record` + Age + `Gender_Personal Descriptor Record (PDR)` +`Race/ethnic Group_Personal Descriptor Record (PDR)`, data = obts_def_felonycharge, family = 'binomial')
+
+sentence_nomultipledispo <- glm(`Sentence_Court Record` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Summary Code_Court Record` + Age + `Gender_Personal Descriptor Record (PDR)` +`Race/ethnic Group_Personal Descriptor Record (PDR)`, data = obts_def_felonycharge, family = 'binomial')
+
+sentence_noconvictiontype <- glm(`Sentence_Court Record` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Disposition Charges_Court Record`+ Age + `Gender_Personal Descriptor Record (PDR)` +`Race/ethnic Group_Personal Descriptor Record (PDR)`, data = obts_def_felonycharge, family = 'binomial')
+
+sentence_noage <- glm(`Sentence_Court Record` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Disposition Charges_Court Record`+ `Summary Code_Court Record`  + `Gender_Personal Descriptor Record (PDR)` +`Race/ethnic Group_Personal Descriptor Record (PDR)`, data = obts_def_felonycharge, family = 'binomial')
+
+sentence_nogender <- glm(`Sentence_Court Record` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Disposition Charges_Court Record`+ `Summary Code_Court Record` + Age  +`Race/ethnic Group_Personal Descriptor Record (PDR)`, data = obts_def_felonycharge, family = 'binomial')
+
+sentence_norace <- glm(`Sentence_Court Record` ~ `Prior Record Code_Arrest Record` + `Summary Code_Arrest Record` + `Multiple Disposition Charges_Court Record`+ `Summary Code_Court Record` + Age + `Gender_Personal Descriptor Record (PDR)`, data = obts_def_felonycharge, family = 'binomial')
+
+pR2(sentence_full)
+pR2(sentence_nopriors)
+pR2(sentence_noarresttype)
+pR2(sentence_nomultipledispo)
+pR2(sentence_noconvictiontype)
+pR2(sentence_noage)
+pR2(nogender)
+pR2(norace)
+
+
+```
+
+
+
+#waffle charts
+```{r waffles}
+
+  #savings <- c(
+ #   `Mortgage\n($84,911)` = 84911, `Auto and\ntuition loans\n($14,414)` = 14414,
+ #   `Home equity loans\n($10,062)` = 10062, `Credit Cards\n($8,565)` = 8565
+  #)
+ # waffle(
+   # savings / 392, rows = 7, size = 0.5, legend_pos = "bottom",
+   # colors = c("#c7d4b6", "#a3aabd", "#a0d0de", "#97b5cf")
+  #)
+
+
+priors <- c(
+  'No prior record\n(11.8%)' = 12, 'Miscellaneous prior record\n(63.4%)'= 63, 'Prior prison\n(20.0%)' = 20
+)
+waffle(
+  priors , rows = 5, legend_pos = "top", colors = c("#2b83ba", "#5e3c99", "#d7191c")
+)
+
+priorsplus <- c(
+  'No prior record\n(10.8%)' = 11, 'Miscellaneous prior record\n(64.6%)'= 64, 'Prior prison\n(19.8%)' = 20, 'Lenghty record (prior to 1982)\n(4.8%)' = 5
+)
+waffle(
+  priorsplus , rows = 5, legend_pos = "top", colors = c("#2b83ba", "#5e3c99", "#d7191c", "#a6d96a")
+)
+
+priorsplusunspec <- c(
+  'No prior record\n(11.3%)' = 11, 'Miscellaneous prior record\n(63.6%)'= 64, 'Prior prison\n(20.3%)' = 20, 'Unspecified prior record\n(4.8%)' = 5
+)
+waffle(
+  priorsplusunspec , rows = 5, legend_pos = "top", colors = c("#2b83ba", "#5e3c99", "#d7191c", "#a6d96a")
+)
+
+offtype <- c(
+  'Violent\n(32.8%)' = 33, 'Property\n(29.1%)'= 29, 'Drug\n(13.6%)' = 14, 'Other\n(24.5%)' = 24
+)
+waffle(
+  offtype , rows = 5, legend_pos = "top", 
+  colors = c("#d7191c", "#2b83ba", "#a6d96a", "#5e3c99")
+)
+
+
+
+
+```
+
+#pseudo r squared stuff
+```{r pseudo r2}
+#pR2(modelname)
+
+
+
+```
+
+
+# model selection
+```{r}
+# # felony vs. misdemeanor
+# fitstart <- glm(`Type of Charge_Court Record` ~ 1, data = obts_def2, family = "binomial")
+# fitall <- glm(`Type of Charge_Court Record` ~ ., data = obts_def2[-c(3, 6, 8, 11)], family = "binomial")
+# 
+# obts_def_step <- step(fitstart, direction = "both", scope = formula(fitall))
+# 
+# sink("fms.txt")
+# summary(obts_def_step)
+# sink()
+# 
+# write.csv(exp(coef(obts_def_step)), "fmor.csv")
+# write.csv(varImp(obts_def_step), "fmvi.csv")
+# 
+# # acquitted/dismissed vs. guilty
+# fitstart2 <- glm(`Sentence_Court Record2` ~ 1, data = obts_def2, family = "binomial")
+# fitall2 <- glm(`Sentence_Court Record2` ~ ., data = obts_def2[-c(3, 6, 8, 9)], family = "binomial")
+# 
+# obts_def_step2 <- step(fitstart2, direction = "both", scope = formula(fitall2))
+# 
+# sink("adgs.txt")
+# summary(obts_def_step2)
+# sink()
+# 
+# write.csv(exp(coef(obts_def_step2)), "adgor.csv")
+# write.csv(varImp(obts_def_step2), "adgvi.csv")
+# 
+# # intermediate sentence vs. prison sentence
+# fitstart3 <- glm(`Sentence_Court Record` ~ 1, data = obts_def_guilty, family = "binomial")
+# fitall3 <- glm(`Sentence_Court Record` ~ ., data = obts_def_guilty[-c(9, 11)], family = "binomial")
+# 
+# obts_def_step3 <- step(fitstart3, direction = "both", scope = formula(fitall3))
+# 
+# sink("ips.txt")
+# summary(obts_def_step3)
+# sink()
+# 
+# write.csv(exp(coef(obts_def_step3)), "ipor.csv")
+# write.csv(varImp(obts_def_step3), "ipvi.csv")
+# ```
+# 
+# # AICs of bivariate logistic regressions
+# ```{r}
+# # create empty vector
+# y <- c()
+# 
+# # extract AIC of each model
+# AICs <- unlist(lapply(c(4, 5, 7, 8), function(x) {
+#   y <- c(y, glm(`Type of Charge_Court Record` ~ obts_def2[, x], data = obts_def2, family = "binomial")$aic)
+#   y <- c(y, glm(`Sentence_Court Record2` ~ obts_def2[, x], data = obts_def2, family = "binomial")$aic)
+#   y <- c(y, glm(`Sentence_Court Record` ~ obts_def_guilty[, x], data = obts_def_guilty, family = "binomial")$aic)
+# }))
+# 
+# # create dataframe
+# AIC_df <- data.frame(Predictor = c(rep("prior record", 3), rep("race/ethnicity", 3), rep("offense (arrest record)", 3), rep("offense (court record)", 3)), Outcome = rep(c("felony vs. misdemeanor", "acquitted/dismissed vs. guilty", "intermediate sentence vs. prison sentence"), 4), AIC = AICs)
+# 
+# # save to Excel file
+# AIC_df <- AIC_df[order(AIC_df$Outcome), ] %>%
+#   write.csv("AIC.csv")
+```

@@ -42,6 +42,7 @@ dsam <- vroom("G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/R
 
 Diagnostic code using the full dataset isolating columns of interest
 ```{r}
+
 # allsubs <- vroom("G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/Raw DOJ Data 2019-Empty Variables Removed.csv",
 #                  col_select = c(SUBJECT_ID),
 #                  #n_max = 100000,
@@ -55,6 +56,10 @@ Diagnostic code using the full dataset isolating columns of interest
 #   distinct(SUBJECT_ID)
 # 93,920 distinct subjects
 
+# alloff <- vroom("G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/Raw DOJ Data 2019-Empty Variables Removed.csv",
+#                  col_select = c(OFFENSE_DESCR, OFFENSE_TOC),
+#                  #n_max = 100000,
+#                  col_types = c(.default = "c"))
 
 # longsam <- vroom("G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/Raw DOJ Data 2019-Empty Variables Removed.csv",
 #                  col_select = c(SUBJECT_ID, CYC_DATE, OFFENSE_DESCR, OFFENSE_TOC),
@@ -190,32 +195,51 @@ dsam <- dsam %>%
 ## for the collapse, will need to cancel out the jail or prison flag and add a probation flag if there is a imp_suspended_flag. Will need to add times unless there is a concurrent_flag.
 ```
 
+
 Join charge hierarchy and add prefixes to charge flags
 ```{r}
-# #Join charge hierarchy with offense flags
-load("G:/CrimJustice/PretrialAssessmentPilot/Complete Charge Code Hierarchy.RData")
 
-## add JBSIS codes to the two most common Infractions that are missing them
-charge_hier <- charge_hier %>%
-  mutate(jbsis_code = if_else(join_var %in% c("I_VC_4000A", "I_VC_16028A"), 290, jbsis_code))
+#Load complete charge hierarchy with flags that have been worked on by lawyers, version where I kept the summary codes
+load("G:/CrimJustice/PretrialAssessmentPilot/Complete Charge Code Hierarchy_SL.RData")
 
-## add JBSIS category flags that are not already captured in the hierarchy
-  ## already in the hierarchy: property_flag, drug_flag. remove these to create misdo/fel specific jbsis flags
+#Add flags for offense types based on DOJ summary codes
+
 charge_hier <- charge_hier %>%
   select(-c(property_flag, drug_flag)) %>%
-  mutate(jbsis_m_property_flag = if_else(jbsis_code %in% c(220), 1, 0),
-         jbsis_m_drug_flag = if_else(jbsis_code %in% c(230), 1, 0),
-         jbsis_m_violent_flag = if_else(jbsis_code %in% c(210), 1, 0),
-         jbsis_m_sex_flag = if_else(jbsis_code %in% c(240), 1, 0),
-         jbsis_m_other_flag = if_else(jbsis_code %in% c(250, 260), 1, 0),
-         jbsis_traffic_flag = if_else(jbsis_code %in% c(270, 280, 290), 1, 0),
-         jbsis_f_property_flag = if_else(jbsis_code %in% c(70), 1, 0),
-         jbsis_f_drug_flag = if_else(jbsis_code %in% c(80), 1, 0),
-         jbsis_f_violent_flag = if_else(jbsis_code %in% c(10, 20, 30, 40, 50), 1, 0),
-         jbsis_f_sex_flag = if_else(jbsis_code %in% c(60), 1, 0),
-         jbsis_f_other_flag = if_else(jbsis_code %in% c(90), 1, 0))
+  mutate(summ_f_violent_flag = if_else(summary_code %in% c(1:7), 1, 0),
+         summ_f_property_flag = if_else(summary_code %in% c(8:11, 24), 1, 0),
+         summ_f_drug_flag = if_else(summary_code %in% c(12:15), 1, 0),
+         summ_f_other_sex_flag = if_else(summary_code %in% c(16:18), 1, 0),
+         summ_f_other_flag = if_else(summary_code %in% c(19:23, 25:28), 1, 0),
+         summ_m_violent_flag = if_else(summary_code %in% c(29:30), 1, 0),
+         summ_m_property_flag = if_else(summary_code %in% c(31:33, 64), 1, 0),
+         summ_m_drug_flag = if_else(summary_code %in% c(34:36), 1, 0),
+         summ_m_other_sex_flag = if_else(summary_code %in% c(37:41), 1, 0),
+         summ_m_other_flag = if_else(summary_code %in% c(42:63, 65:67, 74, 76), 1, 0),
+         summ_status_flag = if_else(summary_code %in% c(68:72), 1, 0))
 
-#there are still a lot of JBSIS codes that are 0, I thought we changed them to be 1000, check in with Noah about this. there are also 3 that are still NA. make sure something didn't go wrong in our updated code
+
+# ## add JBSIS codes to the two most common Infractions that are missing them
+# charge_hier <- charge_hier %>%
+#   mutate(jbsis_code = if_else(join_var %in% c("I_VC_4000A", "I_VC_16028A"), 290, jbsis_code))
+# 
+# ## add JBSIS category flags that are not already captured in the hierarchy
+#   ## already in the hierarchy: property_flag, drug_flag. remove these to create misdo/fel specific jbsis flags
+# charge_hier <- charge_hier %>%
+#   select(-c(property_flag, drug_flag)) %>%
+#   mutate(jbsis_m_property_flag = if_else(jbsis_code %in% c(220), 1, 0),
+#          jbsis_m_drug_flag = if_else(jbsis_code %in% c(230), 1, 0),
+#          jbsis_m_violent_flag = if_else(jbsis_code %in% c(210), 1, 0),
+#          jbsis_m_sex_flag = if_else(jbsis_code %in% c(240), 1, 0),
+#          jbsis_m_other_flag = if_else(jbsis_code %in% c(250, 260), 1, 0),
+#          jbsis_traffic_flag = if_else(jbsis_code %in% c(270, 280, 290), 1, 0),
+#          jbsis_f_property_flag = if_else(jbsis_code %in% c(70), 1, 0),
+#          jbsis_f_drug_flag = if_else(jbsis_code %in% c(80), 1, 0),
+#          jbsis_f_violent_flag = if_else(jbsis_code %in% c(10, 20, 30, 40, 50), 1, 0),
+#          jbsis_f_sex_flag = if_else(jbsis_code %in% c(60), 1, 0),
+#          jbsis_f_other_flag = if_else(jbsis_code %in% c(90), 1, 0))
+# 
+
 
 
 dsam <- left_join(dsam, charge_hier, by = "join_var")
@@ -236,10 +260,12 @@ dsam <- dsam %>%
 dsam <- dsam %>%
   select(!(serious_felony_flag:inf_flag))
 
+
 ```
 
 Diagnostic code
 ```{r}
+
 # charge_hier %>%
 #   mutate(jbsis = jbsis_m_property_flag + jbsis_m_drug_flag + jbsis_m_violent_flag + jbsis_m_sex_flag + jbsis_m_other_flag + jbsis_traffic_flag + jbsis_f_property_flag + jbsis_f_drug_flag + jbsis_f_violent_flag + jbsis_f_sex_flag+ jbsis_f_other_flag) %>%
 #   filter(jbsis == 1)
@@ -316,6 +342,8 @@ dsam %>%
   select(subject_id, cyc_date, disp_order, sent_order, sent_loc_descr, sent_length, sent_time_descr, sent_prison_flag, prison_count, sent_jail_flag, jail_count, sent_probation_flag, prob_count, sent_ex_suspended_flag, sent_imp_suspended_flag, imp_count)
 
 
+charge_hier %>%
+  filter(jbsis_code == 1000)
 ```
 
 Collapse each cycle 
@@ -393,6 +421,7 @@ coll_df <- dsam %>%
 #   distinct(cyc_date, subject_id, .keep_all = T) %>%
 #   count(counties)
 
+coll_df
 
 ```
 
@@ -509,7 +538,7 @@ Collapse historical cycles by person
 ```{r}
 #remove useless fields
 doj_df <- coll_df %>%
-  select(-c(stp_order, stp_event_date, stp_type_code, stp_type_descr, stp_ori_type_descr, cnt_order, disp_date, offense_code, offense_descr, join_var, offense_toc, disp_order, disp_code, conv_stat_code, conv_stat_descr, sent_order, sent_loc_descr, sent_length, sent_time_descr, offense_orig, offense_stat, offense, charge_level, charge_code, charge, master_charge_description, hierarchy, jbsis_code, special_flag))
+  select(-c(stp_order, stp_event_date, stp_type_code, stp_type_descr, stp_ori_type_descr, cnt_order, disp_date, offense_code, offense_descr, join_var, offense_toc, disp_order, disp_code, conv_stat_code, conv_stat_descr, sent_order, sent_loc_descr, sent_length, sent_time_descr, offense_orig, offense_stat, offense, charge_level, charge_code, charge, master_charge_description, hierarchy, summary_code, bcs_code, special_flag))
 #now removing the rest of these before the cycle collapse
 #serious_felony_flag, violent_felony_flag, violent_psa_flag, capital_flag, dv_flag, marijuana_flag, sup_vio_flag, fta_flag, sex_flag, dui_flag,  restrain_flag, jbsis_m_property_flag, jbsis_m_drug_flag, jbsis_f_property_flag, jbsis_f_drug_flag, dv_possible_flag, felony_flag, misd_flag, inf_flag))
 
@@ -547,6 +576,11 @@ dispos %>%
   select(subject_id, cyc_date, dispo_date, court_disp, prior_dispo_date)
 
 #there are some weird cases hanging around that have very old cycle dates but dispo dates in 2019 -- look into what the deal is with these
+
+dsam %>%
+  filter(summary_code == 1000) %>%
+  count(join_var) %>%
+  arrange(desc(n))
 ```
 
 OLD collapse of historical cycles
