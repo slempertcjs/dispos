@@ -42,7 +42,6 @@ dsam <- vroom("G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/R
 
 Diagnostic code using the full dataset isolating columns of interest
 ```{r}
-
 # allsubs <- vroom("G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/Raw DOJ Data 2019-Empty Variables Removed.csv",
 #                  col_select = c(SUBJECT_ID),
 #                  #n_max = 100000,
@@ -60,6 +59,69 @@ Diagnostic code using the full dataset isolating columns of interest
 #                  col_select = c(OFFENSE_DESCR, OFFENSE_TOC),
 #                  #n_max = 100000,
 #                  col_types = c(.default = "c"))
+
+# offenses <- alloff %>%
+#   count(OFFENSE_DESCR, OFFENSE_TOC)
+
+#save(offenses, file = "All offenses in full 2019 file_SL.RData")
+
+#fwrite(offenses, "G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/All offenses by frequency in ACHS.csv")
+
+# load("All offenses in full 2019 file_SL.RData")
+# load("G:/CrimJustice/PretrialAssessmentPilot/Complete Charge Code Hierarchy_SL.RData")
+
+# all_offenses_with_hierarchy <- offenses %>%
+#   mutate(offense_orig = str_extract(OFFENSE_DESCR, "^.*\\-"),
+#          offense_stat = str_extract(offense_orig, " .*"),
+#          offense_stat = gsub(" |-.*", "", offense_stat),
+#          offense_orig = gsub(" .*", "", offense_orig),
+#          offense = toupper(gsub("\\/|\\(|\\)| |\\.|\\.*|^[A-Z]*|\\\\.*|\\{|\\}","", offense_orig))) %>%
+#   unite(join_var, OFFENSE_TOC, offense_stat, offense, remove = F, na.rm = T) %>%
+#   inner_join(charge_hier, by = "join_var") %>%
+#   arrange(desc(n))
+
+#save(all_offenses_with_hierarchy, file = "All offenses with hierarchy in full 2019 file_SL.RData")
+#fwrite(all_offenses_with_hierarchy, "G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/All offenses with hierarchy by frequency in ACHS.csv")
+
+
+# load("G:/CrimJustice/PretrialAssessmentPilot/Complete Charge Code Hierarchy_SL.RData")
+
+
+# summary_missing_offenses <- offenses %>%
+#   mutate(offense_orig = str_extract(OFFENSE_DESCR, "^.*\\-"),
+#          offense_stat = str_extract(offense_orig, " .*"),
+#          offense_stat = gsub(" |-.*", "", offense_stat),
+#          offense_orig = gsub(" .*", "", offense_orig),
+#          offense = toupper(gsub("\\/|\\(|\\)| |\\.|\\.*|^[A-Z]*|\\\\.*|\\{|\\}","", offense_orig))) %>%
+#   unite(join_var, OFFENSE_TOC, offense_stat, offense, remove = F, na.rm = T) %>%
+#   inner_join(charge_hier, by = "join_var") %>%
+#   filter(summary_code == 1000) %>%
+#   arrange(desc(n))
+# 
+# fwrite(summary_missing_offenses, "G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/Offenses missing summary codes by frequency in ACHS.csv")
+
+# nonmatching_offenses <- offenses %>%
+#   mutate(offense_orig = str_extract(OFFENSE_DESCR, "^.*\\-"),
+#          offense_stat = str_extract(offense_orig, " .*"),
+#          offense_stat = gsub(" |-.*", "", offense_stat),
+#          offense_orig = gsub(" .*", "", offense_orig),
+#          offense = toupper(gsub("\\/|\\(|\\)| |\\.|\\.*|^[A-Z]*|\\\\.*|\\{|\\}","", offense_orig))) %>%
+#   unite(join_var, OFFENSE_TOC, offense_stat, offense, remove = F, na.rm = T) %>%
+#   anti_join(charge_hier, by = "join_var") %>%
+#   arrange(desc(n))
+# 
+# fwrite(nonmatching_offenses, "G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/Offenses not matching charge hierarchy by frequency in ACHS.csv")
+
+#Only 14,515 matched charges missing summary codes out of... a lot. In the analysis code I fix the two most common ones (ones with >1000 rows), which leaves only 3,774 matched charges missing summary codes.
+#summary_missing_offenses 
+
+#charges with >1000 rows that are missing summary codes:
+# F_PC_487 -- Grand theft . Should have summary code 09 for felony theft
+# M_PC_484A4905 -- 484(A)/490.5 Theft/petty theft merchandise. Should have summary code 31 for misdemeanor petty theft
+
+
+
+# this version was looking at jbsis codes
 
 # longsam <- vroom("G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/Raw DOJ Data 2019-Empty Variables Removed.csv",
 #                  col_select = c(SUBJECT_ID, CYC_DATE, OFFENSE_DESCR, OFFENSE_TOC),
@@ -202,6 +264,15 @@ Join charge hierarchy and add prefixes to charge flags
 #Load complete charge hierarchy with flags that have been worked on by lawyers, version where I kept the summary codes
 load("G:/CrimJustice/PretrialAssessmentPilot/Complete Charge Code Hierarchy_SL.RData")
 
+#Add summary codes for the two most common offenses that are missing them
+#charges with >1000 rows that are missing summary codes:
+# F_PC_487 -- Grand theft . Should have summary code 09 for felony theft
+# M_PC_484A4905 -- 484(A)/490.5 Theft/petty theft merchandise. Should have summary code 31 for misdemeanor petty theft
+
+charge_hier <- charge_hier %>%
+  mutate(summary_code = if_else(join_var %in% c("F_PC_487"), 9, summary_code),
+         summary_code = if_else(join_var %in% c("M_PC_484A4905"), 31, summary_code))
+
 #Add flags for offense types based on DOJ summary codes
 
 charge_hier <- charge_hier %>%
@@ -271,79 +342,79 @@ Diagnostic code
 #   filter(jbsis == 1)
 
 
-dsam %>%
-  filter(arrest_disp ==1) %>%
-  count(disp_descr) %>%
-  arrange(desc(n))
-
-
-dsam %>%
-  filter(sent_time_descr == "Unknown" & !is.na(sent_length)) %>%
-  select(contains("sent_"))
-
-dsam %>%
-  filter(!is.na(sent_length)) %>%
-  count(sent_time_descr)
-  select(contains("sent_"))
-
-dsam %>%
-  filter(!is.na(sent_length))%>%
-  select(contains("sent_"))
-
-dsam %>%
-  filter(!is.na(sent_time_descr) & sent_time_descr != "Unknown") %>%
-  filter(is.na(sent_length)) %>%
-  select(contains("sent"))
-
-dsam %>%
-  filter(!is.na(sent_loc_descr)) %>%
-  select(sent_order, sent_loc_descr, sent_length, sent_time_descr)
-
-dsam %>%
-  count(sent_order) %>%
-  arrange(desc(n))
-
-dsam %>%
-  distinct(subject_id, cyc_order, .keep_all = T) %>%
-  add_count(subject_id, cyc_date) %>%
-  filter(n>1)
-
-dsam %>%
-  filter(!is.na(disp_order)) %>%
-  group_by(subject_id, cyc_date, cnt_order) %>%
-  mutate(n = length(unique(disp_order)),
-         ns = length(unique(sent_order))) %>%
-  ungroup() %>%
-  filter(n>1 & ns>1) 
-
-dsam %>%
-  count(stp_type_descr) %>%
-  arrange(desc(n))
-
-dsam %>%
-  #filter(!is.na(disp_order)) %>%
-  group_by(subject_id, cyc_date) %>%
-  #mutate(disp_count = length(unique(str_extract(disp_order, "...$")))) %>%
-  #add_count(disp_order) %>%
-  #filter(disp_count >1) %>%
-  #filter(!is.na(sent_order))
-  mutate(across(c(contains("_flag")), max),
-         jail_count = sum(sent_jail_flag),
-         prison_count = sum(sent_prison_flag),
-         prob_count = sum(sent_probation_flag),
-         imp_count = sum(sent_imp_suspended_flag)) %>%
-  #mutate(disp_count = count(disp_order)) %>%
-  #distinct(subject_id, cyc_date, .keep_all = T) %>%
-  #count(sent_prison_flag, prison_count, sent_jail_flag, jail_count, sent_probation_flag, prob_count, sent_ex_suspended_flag, sent_imp_suspended_flag, imp_count) %>%
-  #arrange(desc(n)) %>%
-  ungroup() %>%
-  filter(imp_count >0) %>%
-  filter(imp_count < prison_count + jail_count) %>%
-  select(subject_id, cyc_date, disp_order, sent_order, sent_loc_descr, sent_length, sent_time_descr, sent_prison_flag, prison_count, sent_jail_flag, jail_count, sent_probation_flag, prob_count, sent_ex_suspended_flag, sent_imp_suspended_flag, imp_count)
-
-
-charge_hier %>%
-  filter(jbsis_code == 1000)
+# dsam %>%
+#   filter(arrest_disp ==1) %>%
+#   count(disp_descr) %>%
+#   arrange(desc(n))
+# 
+# 
+# dsam %>%
+#   filter(sent_time_descr == "Unknown" & !is.na(sent_length)) %>%
+#   select(contains("sent_"))
+# 
+# dsam %>%
+#   filter(!is.na(sent_length)) %>%
+#   count(sent_time_descr)
+#   select(contains("sent_"))
+# 
+# dsam %>%
+#   filter(!is.na(sent_length))%>%
+#   select(contains("sent_"))
+# 
+# dsam %>%
+#   filter(!is.na(sent_time_descr) & sent_time_descr != "Unknown") %>%
+#   filter(is.na(sent_length)) %>%
+#   select(contains("sent"))
+# 
+# dsam %>%
+#   filter(!is.na(sent_loc_descr)) %>%
+#   select(sent_order, sent_loc_descr, sent_length, sent_time_descr)
+# 
+# dsam %>%
+#   count(sent_order) %>%
+#   arrange(desc(n))
+# 
+# dsam %>%
+#   distinct(subject_id, cyc_order, .keep_all = T) %>%
+#   add_count(subject_id, cyc_date) %>%
+#   filter(n>1)
+# 
+# dsam %>%
+#   filter(!is.na(disp_order)) %>%
+#   group_by(subject_id, cyc_date, cnt_order) %>%
+#   mutate(n = length(unique(disp_order)),
+#          ns = length(unique(sent_order))) %>%
+#   ungroup() %>%
+#   filter(n>1 & ns>1) 
+# 
+# dsam %>%
+#   count(stp_type_descr) %>%
+#   arrange(desc(n))
+# 
+# dsam %>%
+#   #filter(!is.na(disp_order)) %>%
+#   group_by(subject_id, cyc_date) %>%
+#   #mutate(disp_count = length(unique(str_extract(disp_order, "...$")))) %>%
+#   #add_count(disp_order) %>%
+#   #filter(disp_count >1) %>%
+#   #filter(!is.na(sent_order))
+#   mutate(across(c(contains("_flag")), max),
+#          jail_count = sum(sent_jail_flag),
+#          prison_count = sum(sent_prison_flag),
+#          prob_count = sum(sent_probation_flag),
+#          imp_count = sum(sent_imp_suspended_flag)) %>%
+#   #mutate(disp_count = count(disp_order)) %>%
+#   #distinct(subject_id, cyc_date, .keep_all = T) %>%
+#   #count(sent_prison_flag, prison_count, sent_jail_flag, jail_count, sent_probation_flag, prob_count, sent_ex_suspended_flag, sent_imp_suspended_flag, imp_count) %>%
+#   #arrange(desc(n)) %>%
+#   ungroup() %>%
+#   filter(imp_count >0) %>%
+#   filter(imp_count < prison_count + jail_count) %>%
+#   select(subject_id, cyc_date, disp_order, sent_order, sent_loc_descr, sent_length, sent_time_descr, sent_prison_flag, prison_count, sent_jail_flag, jail_count, sent_probation_flag, prob_count, sent_ex_suspended_flag, sent_imp_suspended_flag, imp_count)
+# 
+# 
+# charge_hier %>%
+#   filter(jbsis_code == 1000)
 ```
 
 Collapse each cycle 
@@ -421,124 +492,124 @@ coll_df <- dsam %>%
 #   distinct(cyc_date, subject_id, .keep_all = T) %>%
 #   count(counties)
 
-coll_df
+# coll_df
 
 ```
 
 Old code and diagnostics
 ```{r}
-dsam %>%
-  #this piece is modified from Noah's code, check if needed
-  mutate(arrested_flag = if_else(grepl("Arrest", stp_ori_type_descr), 1, 0),
-         filed_flag = if_else(grepl("Court", stp_ori_type_descr), 1, 0),
-         convicted_flag =  if_else(grepl("^CONVICTED", disp_descr), 1, 0),
-         dismissed_flag = if_else(grepl("DISCH|ACQUIT|DISMISSED|REL|REJ", disp_descr), 1, 0)) %>%
-  filter(subject_id == "35878334") %>%
-  mutate(across(matches("arrest_.*_flag"), ~if_else(sum(arrested_flag) == 0, 0, max(.x[arrested_flag == 1]))),
-         across(matches("court_.*_flag"), ~if_else(sum(filed_flag) == 0, 0, max(.x[filed_flag == 1]))),
-         across(matches("conviction_.*_flag"), ~~if_else(sum(convicted_flag) == 0, 0, max(.x[convicted_flag == 1]))))
-
-
-dsam %>%
-  count(across(matches("arrest_.*_flag")))
-
-dsam %>%
-  group_by(subject_id, cyc_date) %>%
-  mutate(sent_concurrent_flag = max(sent_concurrent_flag)) %>%
-  ungroup() %>%
-  filter(sent_concurrent_flag == 1) %>%
-  arrange(subject_id, cyc_date)
-
-dsam %>%
-  count(across(matches("sent_.*_flag")), sort = TRUE)
-
-
-#collapse code from pilot
-court_dispo <- court_charge %>%
-  mutate(disposition_type = ordered(disposition_type, levels = c("Other", "Dismissed", "Not_Guilty", "Nolo_Contendere", "Guilty"))) %>%
-  mutate(sentence_type = ordered(sentence_type, levels = c("Other", "Probation", "Jail", "Prison"))) %>%
-  group_by(court_case_id) %>%
-  mutate(hierarchy = if_else(is.na(hierarchy), 1e6, as.numeric(hierarchy))) %>%
-  group_by(court_case_id) %>%
-  mutate(disposition_date = max(disposition_date, na.rm = T),
-         disposition_type = max(disposition_type),
-         conviction_flag = if_else(disposition_type %in% c("Guilty","Nolo_Contendere"), 1, 0),
-         sentence_date = if_else(conviction_flag == 1, min(sentence_date, na.rm = T), as_date(NA)),
-         sentence_type = max(sentence_type)) %>%
-  # mutate(max_court_charge_level = court_charge_level[hierarchy == min(hierarchy)][1],
-  #        max_court_charge_code = court_charge_code[hierarchy == min(hierarchy)][1],
-  #        max_court_charge = court_charge[hierarchy == min(hierarchy)][1],
-  #        max_charge_description = master_charge_description[hierarchy == min(hierarchy)][1],
-  #        max_hier = min(hierarchy)) %>%
-  mutate_at(vars(contains("flag")), funs(if_else(is.na(.), 0, as.numeric(.)))) %>%
-  mutate_at(vars(contains("flag")), funs("count" = sum(.))) %>%
-  mutate_at(vars(contains("flag")), max) %>%
-  filter(hierarchy == min(hierarchy)) %>%
-  ungroup() %>%
-  distinct(court_case_id, .keep_all = T)
-
-
-    # sent_prison_count = case_when(sent_imp_suspended_flag == 0 ~ sum(sent_prison_flag),
-    #                                    sent_imp_suspended_flag ==1 & sum(sent_prison_flag) > 0 ~ sum(sent_prison_flag) - 1,
-    #                                    sum(sent_prison_flag) == 0 ~ 0),
-    #      sent_jail_count = case_when(sent_imp_suspended_flag == 0 | sent_prison_count < sum(sent_prison_flag) ~ sum(sent_jail_flag),
-    #                                  sent_imp_suspended_flag == 1 & sum(sent_jail_flag) > 0 ~ sum(sent_jail_flag) - 1,
-    #                                  sum(sent_jail_flag) == 0 ~ 0)
-
-coll_df %>%
-  count(sent_prison_flag, sent_jail_flag, sent_probation_flag, sent_imp_suspended_flag, sent_ex_suspended_flag) %>%
-  arrange(sent_prison_flag, sent_jail_flag, sent_probation_flag, sent_imp_suspended_flag, sent_ex_suspended_flag)
-
-doj_df %>%
-  count(sent_prison_flag, sent_jail_flag,  sent_probation_flag, sent_imp_suspended_flag, sent_ex_suspended_flag)%>%
-  arrange(sent_prison_flag, sent_jail_flag, sent_probation_flag, sent_imp_suspended_flag, sent_ex_suspended_flag)
-
-coll_df %>%
-  group_by(subject_id, cyc_date) %>%
-  filter(sum(sent_imp_suspended_flag) >0) %>%
-  ungroup()%>%
-  count(sent_prison_count, sent_jail_count, sent_prison_flag, sent_jail_flag)
-
-coll_df %>%
-  filter(sent_imp_suspended_flag == 1)
+# dsam %>%
+#   #this piece is modified from Noah's code, check if needed
+#   mutate(arrested_flag = if_else(grepl("Arrest", stp_ori_type_descr), 1, 0),
+#          filed_flag = if_else(grepl("Court", stp_ori_type_descr), 1, 0),
+#          convicted_flag =  if_else(grepl("^CONVICTED", disp_descr), 1, 0),
+#          dismissed_flag = if_else(grepl("DISCH|ACQUIT|DISMISSED|REL|REJ", disp_descr), 1, 0)) %>%
+#   filter(subject_id == "35878334") %>%
+#   mutate(across(matches("arrest_.*_flag"), ~if_else(sum(arrested_flag) == 0, 0, max(.x[arrested_flag == 1]))),
+#          across(matches("court_.*_flag"), ~if_else(sum(filed_flag) == 0, 0, max(.x[filed_flag == 1]))),
+#          across(matches("conviction_.*_flag"), ~~if_else(sum(convicted_flag) == 0, 0, max(.x[convicted_flag == 1]))))
+# 
+# 
+# dsam %>%
+#   count(across(matches("arrest_.*_flag")))
+# 
+# dsam %>%
+#   group_by(subject_id, cyc_date) %>%
+#   mutate(sent_concurrent_flag = max(sent_concurrent_flag)) %>%
+#   ungroup() %>%
+#   filter(sent_concurrent_flag == 1) %>%
+#   arrange(subject_id, cyc_date)
+# 
+# dsam %>%
+#   count(across(matches("sent_.*_flag")), sort = TRUE)
+# 
+# 
+# #collapse code from pilot
+# court_dispo <- court_charge %>%
+#   mutate(disposition_type = ordered(disposition_type, levels = c("Other", "Dismissed", "Not_Guilty", "Nolo_Contendere", "Guilty"))) %>%
+#   mutate(sentence_type = ordered(sentence_type, levels = c("Other", "Probation", "Jail", "Prison"))) %>%
+#   group_by(court_case_id) %>%
+#   mutate(hierarchy = if_else(is.na(hierarchy), 1e6, as.numeric(hierarchy))) %>%
+#   group_by(court_case_id) %>%
+#   mutate(disposition_date = max(disposition_date, na.rm = T),
+#          disposition_type = max(disposition_type),
+#          conviction_flag = if_else(disposition_type %in% c("Guilty","Nolo_Contendere"), 1, 0),
+#          sentence_date = if_else(conviction_flag == 1, min(sentence_date, na.rm = T), as_date(NA)),
+#          sentence_type = max(sentence_type)) %>%
+#   # mutate(max_court_charge_level = court_charge_level[hierarchy == min(hierarchy)][1],
+#   #        max_court_charge_code = court_charge_code[hierarchy == min(hierarchy)][1],
+#   #        max_court_charge = court_charge[hierarchy == min(hierarchy)][1],
+#   #        max_charge_description = master_charge_description[hierarchy == min(hierarchy)][1],
+#   #        max_hier = min(hierarchy)) %>%
+#   mutate_at(vars(contains("flag")), funs(if_else(is.na(.), 0, as.numeric(.)))) %>%
+#   mutate_at(vars(contains("flag")), funs("count" = sum(.))) %>%
+#   mutate_at(vars(contains("flag")), max) %>%
+#   filter(hierarchy == min(hierarchy)) %>%
+#   ungroup() %>%
+#   distinct(court_case_id, .keep_all = T)
+# 
+# 
+#     # sent_prison_count = case_when(sent_imp_suspended_flag == 0 ~ sum(sent_prison_flag),
+#     #                                    sent_imp_suspended_flag ==1 & sum(sent_prison_flag) > 0 ~ sum(sent_prison_flag) - 1,
+#     #                                    sum(sent_prison_flag) == 0 ~ 0),
+#     #      sent_jail_count = case_when(sent_imp_suspended_flag == 0 | sent_prison_count < sum(sent_prison_flag) ~ sum(sent_jail_flag),
+#     #                                  sent_imp_suspended_flag == 1 & sum(sent_jail_flag) > 0 ~ sum(sent_jail_flag) - 1,
+#     #                                  sum(sent_jail_flag) == 0 ~ 0)
+# 
+# coll_df %>%
+#   count(sent_prison_flag, sent_jail_flag, sent_probation_flag, sent_imp_suspended_flag, sent_ex_suspended_flag) %>%
+#   arrange(sent_prison_flag, sent_jail_flag, sent_probation_flag, sent_imp_suspended_flag, sent_ex_suspended_flag)
+# 
+# doj_df %>%
+#   count(sent_prison_flag, sent_jail_flag,  sent_probation_flag, sent_imp_suspended_flag, sent_ex_suspended_flag)%>%
+#   arrange(sent_prison_flag, sent_jail_flag, sent_probation_flag, sent_imp_suspended_flag, sent_ex_suspended_flag)
+# 
+# coll_df %>%
+#   group_by(subject_id, cyc_date) %>%
+#   filter(sum(sent_imp_suspended_flag) >0) %>%
+#   ungroup()%>%
+#   count(sent_prison_count, sent_jail_count, sent_prison_flag, sent_jail_flag)
+# 
+# coll_df %>%
+#   filter(sent_imp_suspended_flag == 1)
 ```
 
 Sample code from noah for lag
 ```{r}
-df <- tibble(x = c(1:3, NA_integer_, 5))
-df <- tibble(x = c("a", "b", "c"))
-
-df %>%
-mutate(y = cumsum(lag(x, default = 0)))
-
-df %>%
-mutate(prior_property_flag = cummax(lag(property_flag, default = 0)),
-prior_hierarchy = cummin(lag(hierarchy, default = 1e6)))
-
-lag(df$x, default = "")
-
-cummax(na.exclude(lag(df$x, default = 0)))
-
-df <- tibble(x = c(as_date("2019-01-01"), as_date("2019-02-02"), NA, as_date("2019-03-03")))
-
-as_date(cummax(nafill(lag(as.integer(df$x), default = -62091), type = "const", fill = -62091)))
-
-?nafill
-as.integer(as_date("1800-01-01"))
-
-test = tibble(dispo_date = doj_df$dispo_date)
-
-test %>%
-  mutate(nac = as.integer(dispo_date),
-         naaaaa = is.na(nac))
-  mutate(dispo_date = if_else(is.na(dispo_date), as.integer(as_date("1800-01-01")), as.integer(dispo_date)))
+# df <- tibble(x = c(1:3, NA_integer_, 5))
+# df <- tibble(x = c("a", "b", "c"))
+# 
+# df %>%
+# mutate(y = cumsum(lag(x, default = 0)))
+# 
+# df %>%
+# mutate(prior_property_flag = cummax(lag(property_flag, default = 0)),
+# prior_hierarchy = cummin(lag(hierarchy, default = 1e6)))
+# 
+# lag(df$x, default = "")
+# 
+# cummax(na.exclude(lag(df$x, default = 0)))
+# 
+# df <- tibble(x = c(as_date("2019-01-01"), as_date("2019-02-02"), NA, as_date("2019-03-03")))
+# 
+# as_date(cummax(nafill(lag(as.integer(df$x), default = -62091), type = "const", fill = -62091)))
+# 
+# ?nafill
+# as.integer(as_date("1800-01-01"))
+# 
+# test = tibble(dispo_date = doj_df$dispo_date)
+# 
+# test %>%
+#   mutate(nac = as.integer(dispo_date),
+#          naaaaa = is.na(nac))
+#   mutate(dispo_date = if_else(is.na(dispo_date), as.integer(as_date("1800-01-01")), as.integer(dispo_date)))
 ```
 
 Collapse historical cycles by person
 ```{r}
 #remove useless fields
 doj_df <- coll_df %>%
-  select(-c(stp_order, stp_event_date, stp_type_code, stp_type_descr, stp_ori_type_descr, cnt_order, disp_date, offense_code, offense_descr, join_var, offense_toc, disp_order, disp_code, conv_stat_code, conv_stat_descr, sent_order, sent_loc_descr, sent_length, sent_time_descr, offense_orig, offense_stat, offense, charge_level, charge_code, charge, master_charge_description, hierarchy, summary_code, bcs_code, special_flag))
+  select(-c(stp_order, stp_event_date, stp_type_code, stp_type_descr, stp_ori_type_descr, cnt_order, disp_date, offense_code, offense_descr, join_var, offense_toc, disp_order, disp_code, conv_stat_code, conv_stat_descr, sent_order, sent_loc_descr, sent_length, sent_time_descr, offense_orig, offense_stat, offense, charge_level, charge_code, charge, master_charge_description, hierarchy, summary_code, special_flag))
 #now removing the rest of these before the cycle collapse
 #serious_felony_flag, violent_felony_flag, violent_psa_flag, capital_flag, dv_flag, marijuana_flag, sup_vio_flag, fta_flag, sex_flag, dui_flag,  restrain_flag, jbsis_m_property_flag, jbsis_m_drug_flag, jbsis_f_property_flag, jbsis_f_drug_flag, dv_possible_flag, felony_flag, misd_flag, inf_flag))
 
@@ -572,166 +643,178 @@ dispos <- hist_collapse %>%
   filter(year(dispo_date) == 2019)
 
 
-dispos %>%
-  select(subject_id, cyc_date, dispo_date, court_disp, prior_dispo_date)
+# dispos %>%
+#   select(subject_id, cyc_date, dispo_date, court_disp, prior_dispo_date)
 
 #there are some weird cases hanging around that have very old cycle dates but dispo dates in 2019 -- look into what the deal is with these
 
-dsam %>%
-  filter(summary_code == 1000) %>%
-  count(join_var) %>%
-  arrange(desc(n))
+# dsam %>%
+#   filter(summary_code == 1000) %>%
+#   count(join_var) %>%
+#   arrange(desc(n))
+
+# dispos %>%
+#   mutate(totm = arrest_summ_m_violent_flag+ arrest_summ_m_property_flag + arrest_summ_m_drug_flag + arrest_summ_m_other_sex_flag + arrest_summ_m_other_flag) %>%
+#   mutate(totf = arrest_summ_f_violent_flag+ arrest_summ_f_property_flag + arrest_summ_f_drug_flag + arrest_summ_f_other_sex_flag + arrest_summ_f_other_flag) %>%
+#   filter(totf<1)
+# 
+# dispos %>%
+#   mutate(tot = arrest_summ_f_violent_flag+ arrest_summ_f_property_flag + arrest_summ_f_drug_flag + arrest_summ_f_other_sex_flag + arrest_summ_f_other_flag) %>%
+#   count(tot)
+# 
+# charge_hier %>%
+#   mutate(totm = summ_m_violent_flag+ summ_m_property_flag + summ_m_drug_flag + summ_m_other_sex_flag + summ_m_other_flag) %>%
+#   mutate(totf = summ_f_violent_flag+ summ_f_property_flag + summ_f_drug_flag + summ_f_other_sex_flag + summ_f_other_flag) %>%
+#   filter(totf >1)
+
 ```
 
 OLD collapse of historical cycles
 ```{r}
-#most individuals have 1 2019 disposition. A couple have none, and some have more than 1. Unit of analysis should be the disposition. Separate out the non-current dispositions and collapse them down to the person, and then attach the collapsed criminal histories by person to each current disposition. 
-
-dispos_2019 <- doj_df %>%
-  filter(year(dispo_date) == 2019)
-
-histories <- doj_df %>%
-  filter(year(dispo_date) != 2019) #what about rows with no dispo date? do these all not have a disposition? why are they in this dataset? should I include these for arrests?
-  
-hist_collapse <- histories %>%
-  group_by(subject_id) %>%
-  mutate(days_prior_prison = sum(prison_length_days),
-         days_prior_jail = sum(jail_length_days),
-         days_prior_probation = sum(probation_length_days)) %>%
-    
-  #combine qualifiers and remove "NA"s
-  mutate(prior_quals = gsub(",NA|NA,","", paste(offense_qual_lst, collapse = ",")),
-         prior_quals = if_else(prior_quals == "NA", NA_character_, prior_quals)) %>%
-  
-  mutate(prior_dispo_date = max(dispo_date, na.rm = T), #keep the most recent prior disposition date
-         citizen = if_else(is.na(citizen), 0, citizen),
-         prior_citizen = max(citizen, na.rm = T),
-         age_first_dispo = min(cyc_age, na.rm = T)) %>%
-
-  #create counts for each flag
-  mutate(across(contains("flag"), sum, .names = "prior_{.col}_count")) %>%
-  mutate(across(contains("hier"), min, .names = "prior_{.col}")) %>%
-  
-  ungroup() %>%
-  distinct(subject_id, .keep_all = T) %>%
-
-  select(subject_id, contains("prior"), age_first_dispo)
-  
-  
-#join histories to 2019 dispositions
-doj_df <- dispos_2019 %>%
-  left_join(hist_collapse)
-
-#fwrite(doj_df, "G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/Cleaned DOJ data small sample 1.4.2021.csv")
-
-#should add some kind of indicator for concurrent cases, or additional 2019 cases. Or should add earlier 2019 cases to criminal history for later cases in 2019? yeesh.
+# #most individuals have 1 2019 disposition. A couple have none, and some have more than 1. Unit of analysis should be the disposition. Separate out the non-current dispositions and collapse them down to the person, and then attach the collapsed criminal histories by person to each current disposition. 
+# 
+# dispos_2019 <- doj_df %>%
+#   filter(year(dispo_date) == 2019)
+# 
+# histories <- doj_df %>%
+#   filter(year(dispo_date) != 2019) #what about rows with no dispo date? do these all not have a disposition? why are they in this dataset? should I include these for arrests?
+#   
+# hist_collapse <- histories %>%
+#   group_by(subject_id) %>%
+#   mutate(days_prior_prison = sum(prison_length_days),
+#          days_prior_jail = sum(jail_length_days),
+#          days_prior_probation = sum(probation_length_days)) %>%
+#     
+#   #combine qualifiers and remove "NA"s
+#   mutate(prior_quals = gsub(",NA|NA,","", paste(offense_qual_lst, collapse = ",")),
+#          prior_quals = if_else(prior_quals == "NA", NA_character_, prior_quals)) %>%
+#   
+#   mutate(prior_dispo_date = max(dispo_date, na.rm = T), #keep the most recent prior disposition date
+#          citizen = if_else(is.na(citizen), 0, citizen),
+#          prior_citizen = max(citizen, na.rm = T),
+#          age_first_dispo = min(cyc_age, na.rm = T)) %>%
+# 
+#   #create counts for each flag
+#   mutate(across(contains("flag"), sum, .names = "prior_{.col}_count")) %>%
+#   mutate(across(contains("hier"), min, .names = "prior_{.col}")) %>%
+#   
+#   ungroup() %>%
+#   distinct(subject_id, .keep_all = T) %>%
+# 
+#   select(subject_id, contains("prior"), age_first_dispo)
+#   
+#   
+# #join histories to 2019 dispositions
+# doj_df <- dispos_2019 %>%
+#   left_join(hist_collapse)
+# 
+# #fwrite(doj_df, "G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/Cleaned DOJ data small sample 1.4.2021.csv")
+# 
+# #should add some kind of indicator for concurrent cases, or additional 2019 cases. Or should add earlier 2019 cases to criminal history for later cases in 2019? yeesh.
 ```
 
 Diagnostics
 ```{r}
 
 
-doj_df %>%
-  mutate(dispo_2019 = if_else(year(dispo_date) == 2019, 1, 0)) %>%
-  count(dispo_2019)
-  group_by(subject_id) %>%
-  mutate(current_count = sum(dispo_2019, na.rm = T)) %>%
-  ungroup() %>%
-  distinct(subject_id, .keep_all = T) %>%
-  count(current_count)
-  
-  
-doj_df %>%
-  count(yr = year(dispo_date)) %>%
-  arrange(desc(n)) %>%
-  mutate(yrtf = if_else(yr == 2019, T, F))
+# doj_df %>%
+#   mutate(dispo_2019 = if_else(year(dispo_date) == 2019, 1, 0)) %>%
+#   count(dispo_2019)
+#   group_by(subject_id) %>%
+#   mutate(current_count = sum(dispo_2019, na.rm = T)) %>%
+#   ungroup() %>%
+#   distinct(subject_id, .keep_all = T) %>%
+#   count(current_count)
+#   
+#   
+# doj_df %>%
+#   count(yr = year(dispo_date)) %>%
+#   arrange(desc(n)) %>%
+#   mutate(yrtf = if_else(yr == 2019, T, F))
+# 
+# doj_df %>%
+#   distinct(subject_id)
+# 
+# str_replace_na(c(1, 2, 3, NA_character_), replacement = 0)
+# 
+# histories %>%
+#   select(contains("flag"))
+#   select(contains("hier"))
+# dsam %>%
+#   select(contains("date"))
+# 
+# dsam %>%
+#   filter(stp_ori_type_descr == "Court")
+# 
+# dsam %>%
+#   count(subject_id, cyc_order)
+# 
+# summary(dsam$stp_event_date)
+# 
+# dsam %>%
+#   filter(subject_id == "1000093" & cyc_order == "102000000000")
+# 
+# dsam %>%
+#   filter(!is.na(stp_event_date) & !is.na(disp_date)) %>%
+#   select(stp_event_date, disp_date)
+# 
+# dsam %>%
+#   filter(disp_code == "1008")
+# 
+# 
+# dsam %>%
+#   filter(disp_date > as_date("2019-01-01")) %>%
+#   arrange(stp_event_date) %>%
+#   distinct(subject_id, cyc_order, .keep_all = T)
+# 
+# dsam %>%
+#   filter(offense_code == "00001")
+# 
+# dsam %>%
+#   filter(!is.na(disp_descr) & is.na(disp_date)) %>%
+#   count(stp_ori_type_descr)
+# 
+# dsam %>%
+#   filter(stp_event_date == disp_date)
+# 
+# dsam %>%
+#   filter(!is.na(disp_date)) %>%
+#   count(stp_type_descr) %>%
+#   arrange(desc(n))
+# 
+# dsam %>%
+#   filter(stp_ori_type_descr == "Court" & !is.na(disp_descr)) %>%
+#   count(stp_type_descr, disp_descr) %>%
+#   arrange(desc(n))
+# 
+# #court dispositions do not use disp_date! use stp_event_date instead.
+# #not all disp_descr look like they are final dispositions, need to sort out which ones are (e.g. bail forfeited, bench warrant)
+# 
+# dsam %>%
+#   count(stp_type_descr) %>%
+#   arrange(desc(n))
+# 
+# dsam %>%
+#   filter(grepl("PROS", disp_descr)) %>%
+#   filter(is.na(disp_date)) %>%
+#   count(stp_ori_type_descr, stp_type_descr, disp_descr)
+# 
 
-doj_df %>%
-  distinct(subject_id)
 
-str_replace_na(c(1, 2, 3, NA_character_), replacement = 0)
-
-histories %>%
-  select(contains("flag"))
-  select(contains("hier"))
-dsam %>%
-  select(contains("date"))
-
-dsam %>%
-  filter(stp_ori_type_descr == "Court")
-
-dsam %>%
-  count(subject_id, cyc_order)
-
-summary(dsam$stp_event_date)
-
-dsam %>%
-  filter(subject_id == "1000093" & cyc_order == "102000000000")
-
-dsam %>%
-  filter(!is.na(stp_event_date) & !is.na(disp_date)) %>%
-  select(stp_event_date, disp_date)
-
-dsam %>%
-  filter(disp_code == "1008")
-
-
-dsam %>%
-  filter(disp_date > as_date("2019-01-01")) %>%
-  arrange(stp_event_date) %>%
-  distinct(subject_id, cyc_order, .keep_all = T)
-
-dsam %>%
-  filter(offense_code == "00001")
-
-dsam %>%
-  filter(!is.na(disp_descr) & is.na(disp_date)) %>%
-  count(stp_ori_type_descr)
-
-dsam %>%
-  filter(stp_event_date == disp_date)
-
-dsam %>%
-  filter(!is.na(disp_date)) %>%
-  count(stp_type_descr) %>%
-  arrange(desc(n))
-
-dsam %>%
-  filter(stp_ori_type_descr == "Court" & !is.na(disp_descr)) %>%
-  count(stp_type_descr, disp_descr) %>%
-  arrange(desc(n))
-
-#court dispositions do not use disp_date! use stp_event_date instead.
-#not all disp_descr look like they are final dispositions, need to sort out which ones are (e.g. bail forfeited, bench warrant)
-
-dsam %>%
-  count(stp_type_descr) %>%
-  arrange(desc(n))
-
-dsam %>%
-  filter(grepl("PROS", disp_descr)) %>%
-  filter(is.na(disp_date)) %>%
-  count(stp_ori_type_descr, stp_type_descr, disp_descr)
-
-
-
-```
-
-```{r}
-dsam %>%
-  count(stp_type_descr, disp_descr) %>%
-  arrange(desc(n))
-
-dsam %>%
-  count(stp_ori_type_descr, stp_type_descr) %>%
-  arrange(desc(n))
-
-dsam %>%
-  filter(stp_type_descr == "CDC CUSTODY")
-
-dsam %>%
-  filter(stp_type_descr %in% c("ARREST/DETAINED/CITED", "COURT ACTION")) %>%
-  count(disp_descr) %>%
-  arrange(desc(n))
+# dsam %>%
+#   count(stp_type_descr, disp_descr) %>%
+#   arrange(desc(n))
+# 
+# dsam %>%
+#   count(stp_ori_type_descr, stp_type_descr) %>%
+#   arrange(desc(n))
+# 
+# dsam %>%
+#   filter(stp_type_descr == "CDC CUSTODY")
+# 
+# dsam %>%
+#   filter(stp_type_descr %in% c("ARREST/DETAINED/CITED", "COURT ACTION")) %>%
+#   count(disp_descr) %>%
+#   arrange(desc(n))
 ```
 
