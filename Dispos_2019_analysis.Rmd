@@ -268,10 +268,10 @@ load("G:/CrimJustice/PretrialAssessmentPilot/Complete Charge Code Hierarchy_SL.R
 #charges with >1000 rows that are missing summary codes:
 # F_PC_487 -- Grand theft . Should have summary code 09 for felony theft
 # M_PC_484A4905 -- 484(A)/490.5 Theft/petty theft merchandise. Should have summary code 31 for misdemeanor petty theft
-
-charge_hier <- charge_hier %>%
-  mutate(summary_code = if_else(join_var %in% c("F_PC_487"), 9, summary_code),
-         summary_code = if_else(join_var %in% c("M_PC_484A4905"), 31, summary_code))
+#This is now unnecessary because it was moved to the code that creates the charge hierarchy so the version loaded in will already be fixed
+# charge_hier <- charge_hier %>%
+#   mutate(summary_code = if_else(join_var %in% c("F_PC_487"), 9, summary_code),
+#          summary_code = if_else(join_var %in% c("M_PC_484A4905"), 31, summary_code))
 
 #Add flags for offense types based on DOJ summary codes
 
@@ -424,7 +424,7 @@ Collapse each cycle
 
 suppressWarnings(
 coll_df <- dsam %>%
-  #this piece is modified from Noah's code, check if needed
+
   mutate(arrested_flag = if_else(grepl("Arrest", stp_ori_type_descr), 1, 0),
          filed_flag = if_else(grepl("Court", stp_ori_type_descr), 1, 0),
          convicted_flag =  if_else(grepl("^CONVICTED", disp_descr), 1, 0),
@@ -432,7 +432,7 @@ coll_df <- dsam %>%
   
   mutate(across(contains("flag"), ~if_else(is.na(.x), 0, .x))) %>%
  
-  mutate(hierarchy = if_else(is.na(hierarchy), 1e6, as.numeric(hierarchy))) %>%
+  mutate(hierarchy = if_else(is.na(hierarchy) | hierarchy == "0", 1e6, as.numeric(hierarchy))) %>%
   mutate(sentence_date = if_else(!is.na(sent_order), stp_event_date, as_date(NA_character_))) %>%
   
   ##adjust sentence indicators to account for suspended sentences
@@ -453,7 +453,16 @@ coll_df <- dsam %>%
          #probation length will be incorrect in cases where there is a suspended sentence with no probation term specified
          sent_probation_flag = if_else(sent_ex_suspended_flag == 1 | sent_imp_suspended_flag == 1, 1, max(sent_probation_flag))) %>%
   mutate(across(matches("sent_.*_flag"), max)) %>%
+    
+  #create counts for number of m/f charges arrested/filed/convicted --- CHECK THIS
+  mutate(arrested_mcharge_count = length(unique(cnt_order[arrest_misd_flag == 1 & arrested_flag ==1])),
+         filed_mcharge_count = length(unique(cnt_order[court_misd_flag == 1 & filed_flag ==1])),
+         convicted_mcharge_count = length(unique(cnt_order[conviction_misd_flag == 1 & convicted_flag ==1])),
+         arrested_fcharge_count = length(unique(cnt_order[arrest_felony_flag == 1 & arrested_flag ==1])),
+         filed_fcharge_count = length(unique(cnt_order[court_felony_flag == 1 & filed_flag ==1])),
+         convicted_fcharge_count = length(unique(cnt_order[conviction_felony_flag == 1 & convicted_flag ==1]))) %>%
   
+  #this will max the relevant flags within each cycle so that they will be kept in the collapse
   mutate(across(matches("arrest_.*_flag"), ~if_else(sum(arrested_flag) == 0, 0, max(.x[arrested_flag == 1]))),
          across(matches("court_.*_flag"), ~if_else(sum(filed_flag) == 0, 0, max(.x[filed_flag == 1]))),
          across(matches("conviction_.*_flag"), ~if_else(sum(convicted_flag) == 0, 0, max(.x[convicted_flag == 1])))) %>%
@@ -494,6 +503,7 @@ coll_df <- dsam %>%
 
 # coll_df
 
+#do i want to do more counts instead of just flags? currently just counting number of f/m for arrest/filed/convicted, does it matter for the rest of the flags how many counts there were? probably too much detail for criminal history, but would this be useful for the current cycle?
 ```
 
 Old code and diagnostics
@@ -633,7 +643,7 @@ hist_collapse <- doj_df %>%
 
   #create counts for each flag
   mutate(across(contains("flag"), ~cumsum(lag(.x, default = 0)), .names = "prior_{.col}_count")) %>%
-  mutate(across(contains("hier"), ~cummin(lag(.x, default = 0)), .names = "prior_{.col}")) %>%
+  mutate(across(contains("hier"), ~cummin(lag(.x, default = 1e6)), .names = "prior_{.col}")) %>%
   
   ungroup() 
 
@@ -666,6 +676,7 @@ dispos <- hist_collapse %>%
 #   mutate(totm = summ_m_violent_flag+ summ_m_property_flag + summ_m_drug_flag + summ_m_other_sex_flag + summ_m_other_flag) %>%
 #   mutate(totf = summ_f_violent_flag+ summ_f_property_flag + summ_f_drug_flag + summ_f_other_sex_flag + summ_f_other_flag) %>%
 #   filter(totf >1)
+
 
 ```
 
