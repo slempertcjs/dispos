@@ -189,7 +189,7 @@ Diagnostic code using the full dataset isolating columns of interest
 
 ```
 
-# Clean achs data
+# Clean and collapse achs data
 ```{r}
 names(dsam) <- tolower(names(dsam))
 
@@ -255,6 +255,8 @@ dsam <- dsam %>%
          sent_imp_suspended_flag = if_else(sent_loc_descr %in% c("IMP SEN SS" ,"SEN SS", "STAYED"), 1, 0),
          sent_concurrent_flag = if_else(sent_loc_descr %in% c("CONCURRENT"), 1, 0))
 ## for the collapse, will need to cancel out the jail or prison flag and add a probation flag if there is a imp_suspended_flag. Will need to add times unless there is a concurrent_flag.
+
+
 ```
 
 
@@ -827,5 +829,409 @@ Diagnostics
 #   filter(stp_type_descr %in% c("ARREST/DETAINED/CITED", "COURT ACTION")) %>%
 #   count(disp_descr) %>%
 #   arrange(desc(n))
+```
+
+# CA population data from DOF
+tidy ca_age data
+```{r}
+ca_age <- read_xlsx("G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/DOF demographic data 2019/P1B_State_Age.xlsx", sheet = 3, skip = 2, col_names =T) 
+
+
+# ca_age_full <- ca_age %>%
+#   # extract columns
+#    select(`Population`, `2019`) %>%
+#   
+#   # rename column names
+#   rename(Age = Population) %>%
+#   
+#   # remove rows that are not ages
+#   slice(-c(1, 103)) %>%
+# 
+#   # recode variable
+#   mutate(`2019` = as.integer(`2019`),
+#           Age = as.integer(if_else(Age == "100+", "100", Age)),
+#          
+#          # add age category column
+#          `Age Category` = as.factor(case_when(
+#            Age <= 14 ~ "0-14 yrs",
+#            Age > 14 & Age <= 19 ~ "15-19 yrs",
+#            Age > 19 & Age <= 29 ~ "20-29 yrs",
+#            Age > 29 & Age <= 39 ~ "30-39 yrs",
+#            Age > 39 & Age <= 49 ~ "40-49 yrs",
+#            Age > 49 & Age <= 59 ~ "50-59 yrs",
+#            TRUE ~ "60+ yrs"
+#          ))) 
+
+ca_age18 <- ca_age %>%
+ # extract columns
+   select(`Population`, `2019`) %>%
+  
+  # rename column names
+  rename(Age = Population) %>%
+  
+  # remove rows that are not ages
+  slice(-c(1, 103)) %>%
+
+  # recode variable
+  mutate(`2019` = as.integer(`2019`),
+          Age = as.integer(if_else(Age == "100+", "100", Age)),
+         
+         # add age category column
+         `Age Category` = as.factor(case_when(
+           Age <= 17 ~ "0-17 yrs",
+           Age > 17 & Age <= 19 ~ "18-19 yrs",
+           Age > 19 & Age <= 29 ~ "20-29 yrs",
+           Age > 29 & Age <= 39 ~ "30-39 yrs",
+           Age > 39 & Age <= 49 ~ "40-49 yrs",
+           Age > 49 & Age <= 59 ~ "50-59 yrs",
+           TRUE ~ "60+ yrs"
+         ))) %>%
+  
+  # add frequency column
+  group_by(`Age Category`) %>%
+  summarise(Frequency = sum(`2019`)) %>%
+  
+  # add percentage column
+  mutate(Percentage = Frequency / sum(Frequency) * 100)
+
+# ca_age <- ca_age %>%
+#   # extract columns
+#    select(`Population`, `2019`) %>%
+#   
+#   # rename column names
+#   rename(Age = Population) %>%
+#   
+#   # remove rows that are not ages
+#   slice(-c(1, 103)) %>%
+# 
+#   # recode variable
+#   mutate(`2019` = as.integer(`2019`),
+#           Age = as.integer(if_else(Age == "100+", "100", Age)),
+#          
+#          # add age category column
+#          `Age Category` = as.factor(case_when(
+#            Age <= 14 ~ "0-14 yrs",
+#            Age > 14 & Age <= 19 ~ "15-19 yrs",
+#            Age > 19 & Age <= 29 ~ "20-29 yrs",
+#            Age > 29 & Age <= 39 ~ "30-39 yrs",
+#            Age > 39 & Age <= 49 ~ "40-49 yrs",
+#            Age > 49 & Age <= 59 ~ "50-59 yrs",
+#            TRUE ~ "60+ yrs"
+#          ))) %>%
+#   
+#   # add frequency column
+#   group_by(`Age Category`) %>%
+#   summarise(Frequency = sum(`2019`)) %>%
+#   
+#   # add percentage column
+#   mutate(Percentage = Frequency / sum(Frequency) * 100)
+```
+
+tidy ca_eth data
+```{r}
+ca_eth <- read_xlsx("G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/DOF demographic data 2019/P1D_State_Race_Ethnicity.xlsx", sheet = 2, skip = 2, col_names =T) 
+
+ca_eth <- ca_eth %>%
+  # extract columns
+   select(`Race/Ethnicity`, `2019`) %>%
+  
+  # remove last two rows which are total and a note
+  slice(-c(8,9)) %>%
+
+  # recode variable
+  mutate(`2019` = as.integer(`2019`)) %>%
+  # add percentage column
+  mutate(Percentage = `2019` / sum(`2019`) * 100)
+  
+```
+
+tidy ca_sex data
+```{r}
+ca_sex <- read_xlsx("G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/DOF demographic data 2019/P1C_State_Age-Group_Sex.xlsx", sheet = 2, skip = 2, col_names =T) 
+
+ca_sex <- ca_sex %>%
+  # extract columns
+   select(`Women, by age group:`, `2019`) %>%
+  
+   # rename column names
+  rename(Sex = `Women, by age group:`) %>%
+  
+  # select rows that are total women and total men
+  slice(23,48) %>%
+  
+
+  # recode variables
+  mutate(`2019` = as.integer(`2019`),
+         Sex = if_else(Sex == "Total women", "Women", "Men")) %>%
+  
+  # add percentage column
+  mutate(Percentage = `2019` / sum(`2019`) * 100)
+  
+```
+
+#Load collapsed dataset
+```{r}
+load("G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/Dispos.RData")
+
+df <- dispos %>%
+  filter(arrest_felony_flag == 1)  #filter to only dispositions with a felony arrest
+```
+
+
+Standardize factors
+```{r}
+df <- df %>%
+ mutate(gender = as.factor(gender),
+         
+         # make age a number
+         cyc_age = as.integer(cyc_age),
+         # add age category column
+         age_cat = as.factor(case_when(
+           cyc_age < 18 ~ "Under 18",
+           cyc_age >= 18 & cyc_age <= 19 ~ "18-19 yrs",
+           cyc_age > 19 & cyc_age <= 29 ~ "20-29 yrs",
+           cyc_age > 29 & cyc_age <= 39 ~ "30-39 yrs",
+           cyc_age > 39 & cyc_age <= 49 ~ "40-49 yrs",
+           cyc_age > 49 & cyc_age <= 59 ~ "50-59 yrs",
+           TRUE ~ "60+ yrs"
+         )),
+         
+         
+         # recode variables
+         race = as.factor(case_when(
+           race_code == "B" ~ "Black",
+           race_code == "H" ~ "Hispanic",
+           race_code == "W" ~ "White",
+           race_code %in% c("A", "C", "D", "F", "G", "J", "K", "L", "P", "S", "U", "V", "Z") ~ "Asian/PI",
+           race_code == "I" ~ "American Indian",
+           T ~ "Other/Unknown"))
+        )
+```
+
+Numbers for Figure 1 flow chart
+```{r}
+df %>%
+  count(court_disp) %>%
+  mutate(percent = n/sum(n)) #final court dispositions vs law enforcement/prosecution release dispositions
+
+df %>%
+  filter(court_disp ==1) %>%
+  count(convicted_flag) %>%
+  mutate(percent = n/sum(n)) #convicted out of those with a court disposition
+
+df %>%
+  filter(convicted_flag ==1) %>%
+  count(sent_prison_flag) %>%
+  mutate(percent = n/sum(n)) #prison sentences out of those convicted
+
+df %>%
+  filter(convicted_flag ==1) %>%
+  count(sent_prison_flag, sent_jail_flag, sent_probation_flag) %>%
+  mutate(percent = n/sum(n)) #jail and probation sentences out of those convicted
+
+
+```
+
+Demographics of felony defendants (court disposition)
+```{r}
+df %>%
+  filter(court_disp ==1) %>%
+  count(age_cat) %>%
+  mutate(percent = round(n/sum(n)*100, 1)) #age distribution by age category
+
+df %>%
+  filter(court_disp ==1) %>%
+  count(gender) %>%
+  mutate(percent = round(n/sum(n)*100, 1)) #gender distribution
+
+df %>%
+  filter(court_disp ==1) %>%
+  count(race) %>%
+  mutate(percent = round(n/sum(n)*100, 1)) #race distribution
+
+```
+
+Prior record of felony defendants
+```{r}
+df %>%
+  filter(court_disp ==1) %>%
+  count(prior_sent_prison_flag_count >0) %>%
+  mutate(percent = round(n/sum(n)*100, 1)) # prior prison
+
+df %>%
+  filter(court_disp ==1) %>%
+  count(prior_sent_prison_flag_count == 0 & prior_sent_jail_flag_count >0) %>%
+  mutate(percent = round(n/sum(n)*100, 1)) #prior jail with no prior prison
+
+df %>%
+  filter(court_disp ==1) %>%
+  count(prior_sent_prison_flag_count == 0 & prior_sent_jail_flag_count == 0 & prior_sent_probation_flag_count >0) %>%
+  mutate(percent = round(n/sum(n)*100, 1)) #prior probation with no prior incarceration
+
+df %>%
+  filter(court_disp ==1) %>%
+  count(prior_sent_prison_flag_count == 0 & prior_sent_jail_flag_count == 0 & prior_convicted_flag_count >0) %>%
+  mutate(percent = round(n/sum(n)*100, 1)) #prior conviction with no prior incarceration
+
+df %>%
+  filter(court_disp ==1) %>%
+  count(prior_convicted_flag_count ==0) %>%
+  mutate(percent = round(n/sum(n)*100, 1)) #no prior convictions
+
+df %>%
+  filter(court_disp ==1) %>%
+  count(prior_conviction_felony_flag_count >0) %>%
+  mutate(percent = round(n/sum(n)*100, 1)) # has prior felony convictions
+
+df %>%
+  filter(court_disp ==1) %>%
+  count(prior_conviction_felony_flag_count == 0 & prior_conviction_misd_flag_count >0) %>%
+  mutate(percent = round(n/sum(n)*100, 1)) # has prior misdemeanors with no prior felonies
+
+df %>%
+  filter(court_disp ==1) %>%
+  count(prior_conviction_felony_flag_count) %>%
+  mutate(percent = round(n/sum(n)*100, 1)) # number of prior felony convictions
+
+df %>%
+  filter(court_disp ==1) %>%
+  count(prior_conviction_misd_flag_count) %>%
+  mutate(percent = round(n/sum(n)*100, 1)) # number of prior misdo convictions
+
+mean(df$prior_conviction_felony_flag_count) #mean prior felonies
+mean(df$prior_conviction_misd_flag_count) #mean prior misdos
+```
+
+Arrest offense type for felony defendants (court dispo)
+```{r}
+df %>%
+  filter(court_disp ==1) %>%
+  count(arrest_summ_f_violent_flag, arrest_summ_f_property_flag, arrest_summ_f_drug_flag, arrest_summ_f_other_sex_flag, arrest_summ_f_other_flag) %>%
+  mutate(percent = round(n/sum(n)*100, 1)) %>%
+  arrange(desc(n))
+
+df %>%
+  filter(court_disp ==1) %>%
+  mutate(arrest_offense_type = case_when(arrest_summ_f_violent_flag ==1 ~ "Violent",
+                                         arrest_summ_f_property_flag == 1 ~ "Property",
+                                         arrest_summ_f_drug_flag == 1 ~ "Drug",
+                                         T ~ "Other")) %>%
+  count(arrest_offense_type) %>%
+  mutate(percent = round(n/sum(n)*100, 1)) #arrest offense type for felony arrest offenses only. prioritizing violent, then property, then drug, then other (could also show other sex, but percent is low, 1.8%, so lumped in with other)
+
+
+df %>%
+  filter(court_disp ==1) %>%
+  mutate(arrest_offense_type = case_when(arrest_summ_f_violent_flag ==1 | arrest_summ_m_violent_flag ~ "Violent",
+                                         arrest_summ_f_property_flag == 1 | arrest_summ_m_property_flag ~ "Property",
+                                         arrest_summ_f_drug_flag == 1 | arrest_summ_m_drug_flag ~ "Drug",
+                                         T ~ "Other")) %>%
+  count(arrest_offense_type) %>%
+  mutate(percent = round(n/sum(n)*100, 1)) #arrest offense type for all arrest offenses, including misdo charges. prioritizing violent (felony or misdo), then property (felony or misdo), then drug (felony or misdo), then other
+```
+
+
+Diagnostics
+```{r}
+dispos %>%
+  select(prior_quals) %>%
+  separate_rows(prior_quals) %>%
+  count(prior_quals) %>%
+  arrange(desc(n))
+
+dispos %>%
+  count(arrest_disp, court_disp)
+#some have both arrest and court dispos... what does this mean? perhaps some charges dropped before filing but not all?
+
+dispos %>%
+  count(court_disp) %>%
+  mutate(percent = n/sum(n))
+
+dispos %>%
+  count(arrest_felony_flag)%>%
+  mutate(percent = n/sum(n))
+#why are not all of these felony arrests??? theoretically this whole dataset is felony arrests, and yet this shows only 64% are felonies
+
+dispos %>%
+  filter(filed_flag == 1) %>%
+  count(court_felony_flag)%>%
+  mutate(percent = n/sum(n))
+
+dispos %>%
+  filter(convicted_flag == 1) %>%
+  count(conviction_felony_flag)%>%
+  mutate(percent = n/sum(n))
+
+dispos %>%
+  count(filed_flag, convicted_flag)%>%
+  mutate(percent = n/sum(n))
+
+dispos %>%
+  filter(prison_length_days >0) 
+  # count(sent_jail_flag, sent_probation_flag)%>%
+  # mutate(percent = n/sum(n))
+
+dispos %>%
+  distinct(subject_id) #93,478 unique people
+
+dispos %>%
+  count(subject_id) %>%
+  arrange(desc(n)) #some people have as many as 46 dispositions in 2019..... ouch.
+
+dispos %>%
+  count(race_code) %>%
+  mutate(percent = n/sum(n)) %>%
+  arrange(desc(n))
+
+dispos %>%
+  count(prior_sent_prison_flag_count>0) %>%
+  mutate(percent = n/sum(n))
+
+dispos %>%
+  mutate(test = arrest_summ_f_violent_flag + arrest_summ_f_property_flag + arrest_summ_f_drug_flag + arrest_summ_f_other_sex_flag + arrest_summ_f_other_flag) %>%
+  count(test) %>%
+  #count(arrest_summ_f_violent_flag, arrest_summ_f_property_flag, arrest_summ_f_drug_flag, arrest_summ_f_other_sex_flag, arrest_summ_f_other_flag)%>%
+  mutate(percent = n/sum(n))
+
+dispos %>%
+  filter(arrest_felony_flag == 0)
+
+dsam %>%
+  count(disp_descr) %>%
+  arrange(desc(n))
+
+dsam %>%
+  filter(disp_descr == "NO DISPOSITION INFORMATION AVAILABLE") %>%
+  count(stp_type_descr)
+
+test<- dispos %>%
+  filter(arrest_felony_flag == 0) %>%
+  select(subject_id, cyc_date)
+
+dsam %>%
+  semi_join(test) %>%
+  distinct(subject_id, cyc_date)
+
+df <- vroom("G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/DALA_2019_JCC.csv",  col_types = c(.default = "c"))
+
+df %>%
+  count(`TYPE_OF_CHARGE`)
+
+dispos %>%
+  filter(arrest_felony_flag == 1) %>%
+  count(court_disp)%>%
+  mutate(perc = n/sum(n))
+
+dispos %>%
+  semi_join(test, by = "subject_id") %>%
+  group_by(subject_id) %>%
+  mutate(tot_f_arrests = sum(arrest_felony_flag)) %>%
+  ungroup() %>%
+  #distinct(subject_id, .keep_all = T) %>%
+  filter(tot_f_arrests == 0)
+
+df %>%
+  count(RECORD_ID) %>%
+  mutate(perc = n/sum(n))
 ```
 
