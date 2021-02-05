@@ -1004,7 +1004,13 @@ df <- df %>%
            race_code == "W" ~ "White",
            race_code %in% c("A", "C", "D", "F", "G", "J", "K", "L", "P", "S", "U", "V", "Z") ~ "Asian/PI",
            race_code == "I" ~ "American Indian",
-           T ~ "Other/Unknown"))
+           T ~ "Other/Unknown")),
+        
+        # create a categorical variable for arrest offense type based only on felony arrest charges, prioritizing violent, then property, then drug
+        arrest_f_offense_type = case_when(arrest_summ_f_violent_flag ==1 ~ "Violent",
+                                         arrest_summ_f_property_flag == 1 ~ "Property",
+                                         arrest_summ_f_drug_flag == 1 ~ "Drug",
+                                         T ~ "Other")
         )
 ```
 
@@ -1051,7 +1057,7 @@ df %>%
 
 ```
 
-Prior record of felony defendants
+Prior record of felony defendants (court disposition)
 ```{r}
 df %>%
   filter(court_disp ==1) %>%
@@ -1100,36 +1106,226 @@ df %>%
 
 mean(df$prior_conviction_felony_flag_count) #mean prior felonies
 mean(df$prior_conviction_misd_flag_count) #mean prior misdos
+
+
+df %>%
+  filter(court_disp == 1) %>%
+  mutate(prior_record_cat = case_when(prior_sent_prison_flag_count >0  ~ "Prior prison",
+                                      prior_sent_jail_flag_count >0 & days_prior_jail >=365 ~ "Prior jail, 1 year or more",
+                                      prior_sent_jail_flag_count >0  ~ "Prior jail, less than 1 year",
+                                      prior_convicted_flag_count >0 ~ "Prior conviction with no prior incarceration",
+                                      T ~ "No prior convictions")) %>%
+  count(prior_record_cat) %>%
+  mutate(percent = round(n/sum(n)*100, 1))
+
+
+df %>%
+  filter(prior_sent_prison_flag_count >0) %>%
+  summarise(mean(days_prior_prison, na.rm = T)) #mean prior prison time is nearly 8 years, ouch.
+  # count(is.na(days_prior_prison)) %>%
+  # mutate(percent = round(n/sum(n)*100, 1))
+
+df %>%
+  filter(prior_sent_jail_flag_count >0) %>%
+  summarise(mean(days_prior_jail, na.rm = T)) # mean prior jail time is a little less than 2 years.
+  # count(is.na(days_prior_jail)) %>%
+  # mutate(percent = round(n/sum(n)*100, 1))
 ```
 
 Arrest offense type for felony defendants (court dispo)
 ```{r}
-df %>%
-  filter(court_disp ==1) %>%
-  count(arrest_summ_f_violent_flag, arrest_summ_f_property_flag, arrest_summ_f_drug_flag, arrest_summ_f_other_sex_flag, arrest_summ_f_other_flag) %>%
-  mutate(percent = round(n/sum(n)*100, 1)) %>%
-  arrange(desc(n))
 
 df %>%
   filter(court_disp ==1) %>%
-  mutate(arrest_offense_type = case_when(arrest_summ_f_violent_flag ==1 ~ "Violent",
-                                         arrest_summ_f_property_flag == 1 ~ "Property",
-                                         arrest_summ_f_drug_flag == 1 ~ "Drug",
-                                         T ~ "Other")) %>%
-  count(arrest_offense_type) %>%
-  mutate(percent = round(n/sum(n)*100, 1)) #arrest offense type for felony arrest offenses only. prioritizing violent, then property, then drug, then other (could also show other sex, but percent is low, 1.8%, so lumped in with other)
+  count(arrest_f_offense_type) %>%
+  mutate(percent = round(n/sum(n)*100, 1)) #arrest offense type for felony arrest offenses only
 
 
-df %>%
-  filter(court_disp ==1) %>%
-  mutate(arrest_offense_type = case_when(arrest_summ_f_violent_flag ==1 | arrest_summ_m_violent_flag ~ "Violent",
-                                         arrest_summ_f_property_flag == 1 | arrest_summ_m_property_flag ~ "Property",
-                                         arrest_summ_f_drug_flag == 1 | arrest_summ_m_drug_flag ~ "Drug",
-                                         T ~ "Other")) %>%
-  count(arrest_offense_type) %>%
-  mutate(percent = round(n/sum(n)*100, 1)) #arrest offense type for all arrest offenses, including misdo charges. prioritizing violent (felony or misdo), then property (felony or misdo), then drug (felony or misdo), then other
+# df %>%
+#   filter(court_disp ==1) %>%
+#   count(arrest_summ_f_violent_flag, arrest_summ_f_property_flag, arrest_summ_f_drug_flag, arrest_summ_f_other_sex_flag, arrest_summ_f_other_flag) %>%
+#   mutate(percent = round(n/sum(n)*100, 1)) %>%
+#   arrange(desc(n))
+# 
+# df %>%
+#   filter(court_disp ==1) %>%
+#   mutate(arrest_offense_type = case_when(arrest_summ_f_violent_flag ==1 ~ "Violent",
+#                                          arrest_summ_f_property_flag == 1 ~ "Property",
+#                                          arrest_summ_f_drug_flag == 1 ~ "Drug",
+#                                          T ~ "Other")) %>%
+#   count(arrest_offense_type) %>%
+#   mutate(percent = round(n/sum(n)*100, 1)) #arrest offense type for felony arrest offenses only. prioritizing violent, then property, then drug, then other (could also show other sex, but percent is low, 1.8%, so lumped in with other)
+# 
+# 
+# df %>%
+#   filter(court_disp ==1) %>%
+#   mutate(arrest_offense_type = case_when(arrest_summ_f_violent_flag ==1 | arrest_summ_m_violent_flag ~ "Violent",
+#                                          arrest_summ_f_property_flag == 1 | arrest_summ_m_property_flag ~ "Property",
+#                                          arrest_summ_f_drug_flag == 1 | arrest_summ_m_drug_flag ~ "Drug",
+#                                          T ~ "Other")) %>%
+#   count(arrest_offense_type) %>%
+#   mutate(percent = round(n/sum(n)*100, 1)) #arrest offense type for all arrest offenses, including misdo charges. prioritizing violent (felony or misdo), then property (felony or misdo), then drug (felony or misdo), then other
+
+
 ```
 
+Descriptive info on sentences
+```{r}
+df %>%
+  filter(sent_prison_flag ==1) %>%
+  summarise(mean(prison_length_days, na.rm = T)) #mean prison sentence term is 2039 days (5.6 years)
+
+df %>%
+  filter(sent_jail_flag == 1) %>%
+  summarise(mean(jail_length_days, na.rm = T)) #mean jail sentence term is 272 days (0.75 years)
+
+df %>%
+  filter(sent_probation_flag == 1) %>%
+  count(probation_length_days)
+  summarise(mean(probation_length_days, na.rm = T)) #mean probation sentence term is 1242 days (3.4 years). this might be thrown off by suspended sentences that lack probation length (many of these are zeros), and some wonky extremely large term lengths (there is one over 100,000 days = 273 years.... seems excessive)
+
+
+```
+
+Descriptive info on offenses and priors by race and age category
+```{r}
+aggregate(cyc_age ~ race, data = df, FUN = mean)
+
+aggregate(age_cat ~ race, data = df, count)
+
+#priors by race
+df %>%
+  group_by(race) %>%
+  summarise(n = n(), mean_age = mean(cyc_age), mean_prior_fs = mean(prior_conviction_felony_flag_count), mean_prior_ms = mean(prior_conviction_misd_flag_count))
+
+df %>%
+  group_by(age_cat) %>%
+  summarise(n = n(), mean_prior_fs = mean(prior_conviction_felony_flag_count), mean_prior_ms = mean(prior_conviction_misd_flag_count))
+
+#offense categories by race
+df %>%
+  group_by(race) %>%
+  summarise(violentf = mean(arrest_f_offense_type == "Violent"), propf = mean(arrest_f_offense_type == "Property"), drugf = mean(arrest_f_offense_type == "Drug"), otherf = mean(arrest_f_offense_type == "Other"))
+
+#offense categories by age category
+df %>%
+  group_by(age_cat) %>%
+  summarise(violentf = mean(arrest_f_offense_type == "Violent"), propf = mean(arrest_f_offense_type == "Property"), drugf = mean(arrest_f_offense_type == "Drug"), otherf = mean(arrest_f_offense_type == "Other"))
+
+#prior offense category counts by race
+df %>%
+  group_by(race) %>%
+  summarise(prior_violentf = mean(prior_arrest_summ_f_violent_flag_count), prior_propf = mean(prior_arrest_summ_f_property_flag_count), prior_drugf = mean(prior_arrest_summ_f_drug_flag_count), prior_otherf = mean(prior_arrest_summ_f_other_flag_count))
+
+
+#number of arrest charges and offense hierarchy by race
+df %>%
+  group_by(race) %>%
+  summarise(fcharge = mean(arrested_fcharge_count), mcharge = mean(arrested_mcharge_count), arresthier = mean(max_arrest_hier))
+
+#number of filed charges and offense hierarchy by race
+df %>%
+  group_by(race) %>%
+  summarise(ffiled = mean(filed_fcharge_count), mfiled = mean(filed_mcharge_count), filedhier = mean(max_court_hier))
+
+#number of convicted charges and offense hierarchy by race
+df %>%
+  group_by(race) %>%
+  summarise(fconv = mean(convicted_fcharge_count), mconv = mean(convicted_mcharge_count), convhier = mean(max_conv_hier))
+
+#average drop in hierarchy from arrest to filing for those filed by race
+df %>%
+  filter(filed_flag == 1) %>%
+  group_by(race) %>%
+  summarise(arrest_to_filing_drop = mean(max_court_hier - max_arrest_hier))
+
+#average drop in hierarchy from filing to conviction for those convicted by race
+df %>%
+  filter(convicted_flag == 1) %>%
+  group_by(race) %>%
+  summarise(filing_to_conviction_drop = mean(max_conv_hier- max_court_hier))
+
+#filing rate and overall conviction rate out of all arrests by race
+df %>%
+  group_by(race) %>%
+  summarise(filing = mean(filed_flag), convictions_all = mean(convicted_flag))
+
+#conviction rate out of cases filed by race
+df %>%
+  filter(filed_flag == 1) %>%
+  group_by(race) %>%
+  summarise(filed_conviction = mean(convicted_flag))
+
+#prison sentencing rate out of convicted cases by race
+df %>%
+  filter(convicted_flag == 1) %>%
+  group_by(race) %>%
+  summarise(prison = mean(sent_prison_flag))
+
+#jail sentencing rate out of convicted cases not sentenced to prison by race
+df %>%
+  filter(convicted_flag == 1, sent_prison_flag == 0) %>%
+  group_by(race) %>%
+  summarise(jail = mean(sent_jail_flag))
+
+#prison sentence length out of cases sentenced to prison
+df %>%
+  filter(sent_prison_flag == 1) %>%
+  group_by(race) %>%
+  summarise(prison_length = mean(prison_length_days, na.rm = T), length_na = mean(is.na(prison_length_days)))
+
+#jail sentence length out of cases sentenced to jail
+df %>%
+  filter(sent_jail_flag == 1) %>%
+  group_by(race) %>%
+  summarise(jail_length = mean(jail_length_days, na.rm = T), length_na = mean(is.na(jail_length_days)))
+
+#probation sentence length out of cases sentenced to probation
+df %>%
+  filter(sent_probation_flag == 1) %>%
+  group_by(race) %>%
+  summarise(prob_length = mean(probation_length_days, na.rm = T), length_na = mean(is.na(probation_length_days)))
+
+df %>%
+  select(arrest_f_offense_type)
+```
+Set desired base levels
+```{r}
+df$race <- relevel(df$race, ref="White")
+df$gender <- relevel(df$gender, ref="M")
+df$arrest_f_offense_type <- as.factor(df$arrest_f_offense_type)
+df$arrest_f_offense_type <- relevel(df$arrest_f_offense_type, ref="Property")
+df$stp_ori_cnty_name <- as.factor(df$stp_ori_cnty_name)
+df$stp_ori_cnty_name <- relevel(df$stp_ori_cnty_name, ref ="LOS ANGELES")
+```
+
+Regressions
+```{r}
+#conviction regression, kitchen sink
+conv_county <- glm(convicted_flag ~  prior_conviction_felony_flag_count + prior_conviction_misd_flag_count + arrest_f_offense_type + cyc_age + gender +race + stp_ori_cnty_name, data = df, family = 'binomial')
+
+summary(conv_county)
+
+#prison sentence regression, kitchen sink
+prison_county <- glm(sent_prison_flag ~  prior_conviction_felony_flag_count + prior_conviction_misd_flag_count + conviction_summ_f_violent_flag + conviction_summ_f_property_flag + conviction_summ_f_drug_flag + conviction_sex_flag + conviction_sup_vio_flag + convicted_fcharge_count + convicted_mcharge_count + max_conv_hier + cyc_age + gender +race + stp_ori_cnty_name, data = subset(df, convicted_flag == 1), family = 'binomial')
+
+#non-binary
+prison_county <- lm(sent_prison_flag ~  prior_conviction_felony_flag_count + prior_conviction_misd_flag_count + conviction_summ_f_violent_flag + conviction_summ_f_property_flag + conviction_summ_f_drug_flag + conviction_sex_flag + conviction_sup_vio_flag + convicted_fcharge_count + convicted_mcharge_count + max_conv_hier + cyc_age + gender +race + stp_ori_cnty_name, data = subset(df, convicted_flag == 1))
+
+
+summary(prison_county)
+
+#prison sentence length regression, kitchen sink
+
+prison_length <- lm(prison_length_days ~  prior_conviction_felony_flag_count + prior_conviction_misd_flag_count  + conviction_summ_f_violent_flag + conviction_summ_f_property_flag + conviction_summ_f_drug_flag  + conviction_sex_flag + conviction_sup_vio_flag + convicted_fcharge_count + convicted_mcharge_count + max_conv_hier + cyc_age + gender  + stp_ori_cnty_name + race, data = subset(df, sent_prison_flag == 1))
+
+summary(prison_length)
+
+df$prior_max_conv_hier
+
+df %>%
+  filter(cyc_date < as_date("1990-01-01"))
+```
 
 Diagnostics
 ```{r}
