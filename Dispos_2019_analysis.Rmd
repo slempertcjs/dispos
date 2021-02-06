@@ -20,6 +20,9 @@ library(tidyverse)
 library(tools)
 library(vroom)
 library(beepr)
+library(sandwich) # for robust standard errors
+library(lmtest) # to run tests using the robust standard errors
+library(broom) # to get stuff out of the objects lmtest produces
 
 ```
 
@@ -1302,29 +1305,60 @@ df$stp_ori_cnty_name <- relevel(df$stp_ori_cnty_name, ref ="LOS ANGELES")
 Regressions
 ```{r}
 #conviction regression, kitchen sink
-conv_county <- glm(convicted_flag ~  prior_conviction_felony_flag_count + prior_conviction_misd_flag_count + arrest_f_offense_type + cyc_age + gender +race + stp_ori_cnty_name, data = df, family = 'binomial')
+conv_county <- glm(convicted_flag ~  prior_conviction_felony_flag_count + prior_conviction_misd_flag_count + arrest_f_offense_type + cyc_age + gender +race + stp_ori_cnty_name, data = df, family = 'poisson')
 
-summary(conv_county)
+# summary(conv_county)
+conv <- tidy(coeftest(conv_county, vcov. = sandwich)) %>%
+  mutate(relative_risk = round(exp(estimate), 4))
 
 #prison sentence regression, kitchen sink
-prison_county <- glm(sent_prison_flag ~  prior_conviction_felony_flag_count + prior_conviction_misd_flag_count + conviction_summ_f_violent_flag + conviction_summ_f_property_flag + conviction_summ_f_drug_flag + conviction_sex_flag + conviction_sup_vio_flag + convicted_fcharge_count + convicted_mcharge_count + max_conv_hier + cyc_age + gender +race + stp_ori_cnty_name, data = subset(df, convicted_flag == 1), family = 'binomial')
+prison_county <- glm(sent_prison_flag ~  prior_conviction_felony_flag_count + prior_conviction_misd_flag_count + conviction_summ_f_violent_flag + conviction_summ_f_property_flag + conviction_summ_f_drug_flag + conviction_sex_flag + conviction_sup_vio_flag + convicted_fcharge_count + convicted_mcharge_count + max_conv_hier + cyc_age + gender +race + stp_ori_cnty_name, data = subset(df, convicted_flag == 1), family = 'poisson')
+
+#without county
+prison_sent <- glm(sent_prison_flag ~  prior_conviction_felony_flag_count + prior_conviction_misd_flag_count + conviction_summ_f_violent_flag + conviction_summ_f_property_flag + conviction_summ_f_drug_flag + conviction_sex_flag + conviction_sup_vio_flag + convicted_fcharge_count + convicted_mcharge_count + max_conv_hier + cyc_age + gender +race, data = subset(df, convicted_flag == 1), family = 'poisson')
+
+#same as above but without race
+prison_norace <- glm(sent_prison_flag ~  prior_conviction_felony_flag_count + prior_conviction_misd_flag_count + conviction_summ_f_violent_flag + conviction_summ_f_property_flag + conviction_summ_f_drug_flag + conviction_sex_flag + conviction_sup_vio_flag + convicted_fcharge_count + convicted_mcharge_count + max_conv_hier + cyc_age + gender, data = subset(df, convicted_flag == 1), family = 'poisson')
 
 #non-binary
-prison_county <- lm(sent_prison_flag ~  prior_conviction_felony_flag_count + prior_conviction_misd_flag_count + conviction_summ_f_violent_flag + conviction_summ_f_property_flag + conviction_summ_f_drug_flag + conviction_sex_flag + conviction_sup_vio_flag + convicted_fcharge_count + convicted_mcharge_count + max_conv_hier + cyc_age + gender +race + stp_ori_cnty_name, data = subset(df, convicted_flag == 1))
+# prison_county <- lm(sent_prison_flag ~  prior_conviction_felony_flag_count + prior_conviction_misd_flag_count + conviction_summ_f_violent_flag + conviction_summ_f_property_flag + conviction_summ_f_drug_flag + conviction_sex_flag + conviction_sup_vio_flag + convicted_fcharge_count + convicted_mcharge_count + max_conv_hier + cyc_age + gender +race + stp_ori_cnty_name, data = subset(df, convicted_flag == 1))
 
 
-summary(prison_county)
+#summary(prison_county)
+
+pris_sent <- tidy(coeftest(prison_county, vcov. = sandwich)) %>%
+  mutate(relative_risk = round(exp(estimate), 4))
+
+# likelihood ratio test to compare models with and without race
+model_comp <- tidy(lrtest(prison_norace, prison_sent))
 
 #prison sentence length regression, kitchen sink
 
 prison_length <- lm(prison_length_days ~  prior_conviction_felony_flag_count + prior_conviction_misd_flag_count  + conviction_summ_f_violent_flag + conviction_summ_f_property_flag + conviction_summ_f_drug_flag  + conviction_sex_flag + conviction_sup_vio_flag + convicted_fcharge_count + convicted_mcharge_count + max_conv_hier + cyc_age + gender  + stp_ori_cnty_name + race, data = subset(df, sent_prison_flag == 1))
 
+#without county
+prison_length <- lm(prison_length_days ~  prior_conviction_felony_flag_count + prior_conviction_misd_flag_count  + conviction_summ_f_violent_flag + conviction_summ_f_property_flag + conviction_summ_f_drug_flag  + conviction_sex_flag + conviction_sup_vio_flag + convicted_fcharge_count + convicted_mcharge_count + max_conv_hier + cyc_age + gender  + race, data = subset(df, sent_prison_flag == 1))
+
+#without race
+prison_length_norace <- lm(prison_length_days ~  prior_conviction_felony_flag_count + prior_conviction_misd_flag_count  + conviction_summ_f_violent_flag + conviction_summ_f_property_flag + conviction_summ_f_drug_flag  + conviction_sex_flag + conviction_sup_vio_flag + convicted_fcharge_count + convicted_mcharge_count + max_conv_hier + cyc_age + gender, data = subset(df, sent_prison_flag == 1))
+
 summary(prison_length)
 
-df$prior_max_conv_hier
+lrtest(prison_length, prison_length_norace)
+anova(prison_length, prison_length_norace)
+#what is the difference between lrtest and anova? which is appropriate to use here?
 
+#some weird very old cycle dates
 df %>%
   filter(cyc_date < as_date("1990-01-01"))
+
+
+```
+
+
+```{r}
+
+
 ```
 
 Diagnostics
