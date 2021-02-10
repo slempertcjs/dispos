@@ -5,6 +5,8 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+
+
 ```
 
 # Libraries
@@ -1203,15 +1205,17 @@ df <- df %>%
  mutate(gender = as.factor(gender),
          
          # make age a number
-         cyc_age = as.integer(cyc_age),
+         age = as.integer(age),
+         age_first_dispo = as.integer(age_first_dispo),
+        
          # add age category column
          age_cat = as.factor(case_when(
-           cyc_age < 18 ~ "Under 18",
-           cyc_age >= 18 & cyc_age <= 19 ~ "18-19 yrs",
-           cyc_age > 19 & cyc_age <= 29 ~ "20-29 yrs",
-           cyc_age > 29 & cyc_age <= 39 ~ "30-39 yrs",
-           cyc_age > 39 & cyc_age <= 49 ~ "40-49 yrs",
-           cyc_age > 49 & cyc_age <= 59 ~ "50-59 yrs",
+           age < 18 ~ "Under 18",
+           age >= 18 & age <= 19 ~ "18-19 yrs",
+           age > 19 & age <= 29 ~ "20-29 yrs",
+           age > 29 & age <= 39 ~ "30-39 yrs",
+           age > 39 & age <= 49 ~ "40-49 yrs",
+           age > 49 & age <= 59 ~ "50-59 yrs",
            TRUE ~ "60+ yrs"
          )),
          
@@ -1229,7 +1233,25 @@ df <- df %>%
         arrest_f_offense_type = case_when(arrest_summ_f_violent_flag ==1 ~ "Violent",
                                          arrest_summ_f_property_flag == 1 ~ "Property",
                                          arrest_summ_f_drug_flag == 1 ~ "Drug",
-                                         T ~ "Other")
+                                         T ~ "Other"),
+        
+        #create combined suspended flag
+        sent_suspended_flag = if_else(sent_ex_suspended_flag == 1 | sent_imp_suspended_flag ==1, 1, 0),
+        
+        #create a variable to track number of days since last dispo (will change to conviction when re-collapse completes)
+        #think about what to do for ppl with no priors
+        days_since_last_dispo = as.integer(dispo_date - prior_dispo_date), 
+         
+        #create scaled variables for hierarchy
+        prior_max_conv_hier_scaled = scale(prior_max_conv_hier),
+        max_arrest_hier_scaled = scale(max_arrest_hier),
+        max_court_hier_scaled = scale(max_court_hier),
+        max_conv_hier_scaled = scale(max_conv_hier),
+        
+        #calculate difference in hierarchy values from arrest to filing to conviction, and scale differences
+        filing_reduction_scaled = scale(max_court_hier - max_arrest_hier, center = F),
+        conv_reduction_scaled = scale(max_conv_hier - max_court_hier, center = F)
+        
         )
 ```
 
@@ -1514,24 +1536,90 @@ df$race <- relevel(df$race, ref="White")
 df$gender <- relevel(df$gender, ref="M")
 df$arrest_f_offense_type <- as.factor(df$arrest_f_offense_type)
 df$arrest_f_offense_type <- relevel(df$arrest_f_offense_type, ref="Property")
-df$stp_ori_cnty_name <- as.factor(df$stp_ori_cnty_name)
-df$stp_ori_cnty_name <- relevel(df$stp_ori_cnty_name, ref ="LOS ANGELES")
+df$county <- as.factor(df$county)
+df$county <- relevel(df$county, ref ="LOS ANGELES")
 ```
 
-Regressions
+Filed regressions
 ```{r}
-#conviction regression, kitchen sink
-conv_county <- glm(convicted_flag ~  prior_conviction_felony_flag_count + prior_conviction_misd_flag_count + arrest_f_offense_type + cyc_age + gender +race + stp_ori_cnty_name, data = df, family = 'poisson')
+
+#no county
+filed <- glm(filed_flag ~  prior_conviction_felony_flag_count + prior_conviction_misd_flag_count + arrest_f_offense_type + arrest_sex_flag + arrest_dv_flag + arrested_mcharge_count + arrested_fcharge_count + age + gender +race, data = df, family = 'poisson')
 
 # summary(conv_county)
-conv <- tidy(coeftest(conv_county, vcov. = sandwich)) %>%
+filed <- tidy(coeftest(filed, vcov. = sandwich)) %>%
   mutate(relative_risk = round(exp(estimate), 4))
 
+filed
+```
+
+Conviction regressions
+```{r}
+
+#no county
+conv <- glm(convicted_flag ~  prior_conviction_felony_flag_count + prior_conviction_misd_flag_count + arrest_f_offense_type + arrest_sex_flag + arrest_dv_flag + arrested_mcharge_count + arrested_fcharge_count + age + gender +race, data = subset(df, filed_flag == 1), family = 'poisson')
+
+#filed rather than arrest charges
+conv <- glm(convicted_flag ~  prior_conviction_felony_flag_count + prior_conviction_misd_flag_count + court_summ_f_violent_flag + court_summ_f_property_flag + court_summ_f_drug_flag + court_sex_flag + court_dv_flag + filed_mcharge_count + filed_fcharge_count + age + gender +race, data = subset(df, filed_flag == 1), family = 'poisson')
+
+#with county
+conv <- glm(convicted_flag ~  prior_conviction_felony_flag_count + prior_conviction_misd_flag_count + scale(prior_max_conv_hier) + arrest_sup_vio_flag + court_summ_f_violent_flag + court_summ_f_property_flag + court_summ_f_drug_flag + court_sex_flag + court_dv_flag + filed_mcharge_count + filed_fcharge_count + scale(max_court_hier) + age + gender +race + county, data = subset(df, filed_flag == 1), family = 'poisson')
+
+dftest <- df %>%
+  mutate(days_since_last_dispo = as.integer(dispo_date - prior_dispo_date), #think about what to do for ppl with no priors
+         prior_max_conv_hier_scaled = scale(prior_max_conv_hier),
+         max_arrest_hier_scaled = scale(max_arrest_hier),
+         max_court_hier_scaled = scale(max_court_hier),
+         max_conv_hier_scaled = scale(max_conv_hier),
+         filing_reduction_scaled = scale(max_court_hier - max_arrest_hier, center = F),
+         conv_reduction_scaled = scale(max_conv_hier - max_court_hier, center = F))
+
+#look at days since last dispo, except would need to correct for when they have no priors
+conv <- glm(convicted_flag ~  prior_conviction_felony_flag_count + prior_conviction_misd_flag_count + prior_max_conv_hier_scaled + arrest_sup_vio_flag + court_summ_f_violent_flag + court_summ_f_property_flag + court_summ_f_drug_flag + court_sex_flag + court_dv_flag + filed_mcharge_count + filed_fcharge_count + max_court_hier_scaled + age + gender +race + county + days_since_last_dispo, data = subset(df, filed_flag == 1), family = 'poisson')
+
+# summary(conv_county)
+conv <- tidy(coeftest(conv, vcov. = sandwich)) %>%
+  mutate(relative_risk = round(exp(estimate), 4))
+
+conv
+
+dftest %>%
+  select(filing_reduction_perc, conv_reduction_perc, filing_reduction_scaled, conv_reduction_scaled)
+
+```
+Charge reduction regressions
+```{r}
+file_reduc <- lm(filing_reduction_scaled ~  prior_conviction_felony_flag_count + prior_conviction_misd_flag_count + prior_max_conv_hier_scaled + arrest_sup_vio_flag + arrest_summ_f_violent_flag + arrest_summ_f_property_flag + arrest_summ_f_drug_flag + arrest_sex_flag + arrest_dv_flag + arrested_mcharge_count + arrested_fcharge_count + max_arrest_hier_scaled + age + gender +race + county + days_since_last_dispo, data = subset(df, filed_flag == 1))
+
+summary(file_reduc)
+
+conv_reduc <- lm(conv_reduction_scaled ~  prior_conviction_felony_flag_count + prior_conviction_misd_flag_count + prior_max_conv_hier_scaled + arrest_sup_vio_flag + court_summ_f_violent_flag + court_summ_f_property_flag + court_summ_f_drug_flag + court_sex_flag + court_dv_flag + filed_mcharge_count + filed_fcharge_count + max_court_hier_scaled + age + gender +race + county + days_since_last_dispo, data = subset(df, convicted_flag == 1))
+
+summary(conv_reduc)
+
+```
+
+Felony conviction regressions
+```{r}
+#conviction regression, kitchen sink
+conv_fel <- glm(conviction_felony_flag ~  prior_conviction_felony_flag_count + prior_conviction_misd_flag_count + arrest_f_offense_type + arrest_sex_flag + arrest_dv_flag + arrested_mcharge_count + arrested_fcharge_count + age + gender +race, data = subset(df, convicted_flag == 1), family = 'poisson')
+
+# summary(conv_county)
+felcon <- tidy(coeftest(conv_fel, vcov. = sandwich)) %>%
+  mutate(relative_risk = round(exp(estimate), 4))
+
+felcon
+
+df$arrested_mcharge_count
+```
+
+Prison sentencing regressions
+```{r}
 #prison sentence regression, kitchen sink
 prison_county <- glm(sent_prison_flag ~  prior_conviction_felony_flag_count + prior_conviction_misd_flag_count + conviction_summ_f_violent_flag + conviction_summ_f_property_flag + conviction_summ_f_drug_flag + conviction_sex_flag + conviction_sup_vio_flag + convicted_fcharge_count + convicted_mcharge_count + max_conv_hier + cyc_age + gender +race + stp_ori_cnty_name, data = subset(df, convicted_flag == 1), family = 'poisson')
 
 #without county
-prison_sent <- glm(sent_prison_flag ~  prior_conviction_felony_flag_count + prior_conviction_misd_flag_count + conviction_summ_f_violent_flag + conviction_summ_f_property_flag + conviction_summ_f_drug_flag + conviction_sex_flag + conviction_sup_vio_flag + convicted_fcharge_count + convicted_mcharge_count + max_conv_hier + cyc_age + gender +race, data = subset(df, convicted_flag == 1), family = 'poisson')
+prison_sent <- glm(sent_prison_flag ~  prior_conviction_felony_flag_count + prior_conviction_misd_flag_count + conviction_summ_f_violent_flag + conviction_summ_f_property_flag + conviction_summ_f_drug_flag + conviction_sex_flag + conviction_sup_vio_flag + convicted_fcharge_count + convicted_mcharge_count + max_conv_hier + age + gender +race, data = subset(df, convicted_flag == 1 & conviction_felony_flag == 1), family = 'poisson')
 
 #same as above but without race
 prison_norace <- glm(sent_prison_flag ~  prior_conviction_felony_flag_count + prior_conviction_misd_flag_count + conviction_summ_f_violent_flag + conviction_summ_f_property_flag + conviction_summ_f_drug_flag + conviction_sex_flag + conviction_sup_vio_flag + convicted_fcharge_count + convicted_mcharge_count + max_conv_hier + cyc_age + gender, data = subset(df, convicted_flag == 1), family = 'poisson')
@@ -1542,12 +1630,19 @@ prison_norace <- glm(sent_prison_flag ~  prior_conviction_felony_flag_count + pr
 
 #summary(prison_county)
 
-pris_sent <- tidy(coeftest(prison_county, vcov. = sandwich)) %>%
+pris_sent <- tidy(coeftest(prison_sent, vcov. = sandwich)) %>%
   mutate(relative_risk = round(exp(estimate), 4))
+
+pris_sent
 
 # likelihood ratio test to compare models with and without race
 model_comp <- tidy(lrtest(prison_norace, prison_sent))
 
+df$conviction_felony_flag
+```
+
+Prison sentence length regressions
+```{r}
 #prison sentence length regression, kitchen sink
 
 prison_length <- lm(prison_length_days ~  prior_conviction_felony_flag_count + prior_conviction_misd_flag_count  + conviction_summ_f_violent_flag + conviction_summ_f_property_flag + conviction_summ_f_drug_flag  + conviction_sex_flag + conviction_sup_vio_flag + convicted_fcharge_count + convicted_mcharge_count + max_conv_hier + cyc_age + gender  + stp_ori_cnty_name + race, data = subset(df, sent_prison_flag == 1))
@@ -1571,10 +1666,58 @@ df %>%
 
 ```
 
-
+Jail sentencing regressions
 ```{r}
+#felony convictions only, with no prison sentence. without county.
+jail_sent <- glm(sent_jail_flag ~  prior_conviction_felony_flag_count + prior_conviction_misd_flag_count + conviction_summ_f_violent_flag + conviction_summ_f_property_flag + conviction_summ_f_drug_flag + conviction_sex_flag + conviction_sup_vio_flag + convicted_fcharge_count + convicted_mcharge_count + max_conv_hier + age + gender +race, data = subset(df, convicted_flag == 1 & sent_prison_flag == 0 & conviction_felony_flag == 1), family = 'poisson')
+
+#misdo convictions only
+jail_sent <- glm(sent_jail_flag ~  prior_conviction_felony_flag_count + prior_conviction_misd_flag_count + conviction_summ_m_violent_flag + conviction_summ_m_property_flag + conviction_summ_m_drug_flag + conviction_sex_flag + conviction_sup_vio_flag + convicted_mcharge_count + max_conv_hier + age + gender +race + county, data = subset(df, convicted_flag == 1 & sent_prison_flag == 0 & conviction_felony_flag == 0), family = 'poisson')
+
+#misdo convictions only, without county
+jail_nocounty <- glm(sent_jail_flag ~  prior_conviction_felony_flag_count + prior_conviction_misd_flag_count + conviction_summ_m_violent_flag + conviction_summ_m_property_flag + conviction_summ_m_drug_flag + conviction_sex_flag + conviction_sup_vio_flag + convicted_mcharge_count + max_conv_hier + age + gender +race, data = subset(df, convicted_flag == 1 & sent_prison_flag == 0 & conviction_felony_flag == 0), family = 'poisson')
+
+jailed <- tidy(coeftest(jail_sent, vcov. = sandwich)) %>%
+  mutate(relative_risk = round(exp(estimate), 4))
+
+jailed
+
+lrtest(jail_nocounty, jail_sent)
+
+subset(df, convicted_flag == 1 & sent_prison_flag == 0 & conviction_felony_flag == 1) %>%
+  count(sent_jail_flag, sent_probation_flag)
+
+df %>%
+  count(sent_jail_flag, sent_suspended_flag)
+```
+Jail length regressions
+```{r}
+#without county
+jail_length <- lm(jail_length_days ~  prior_conviction_felony_flag_count + prior_conviction_misd_flag_count  + conviction_summ_f_violent_flag + conviction_summ_f_property_flag + conviction_summ_f_drug_flag  + conviction_sex_flag + conviction_sup_vio_flag + convicted_fcharge_count + convicted_mcharge_count + max_conv_hier + age + gender  + race, data = subset(df, sent_prison_flag == 0 & sent_jail_flag == 1))
+
+summary(jail_length)
+```
+Probation length regressions
+```{r}
+#without county
+prob_length <- lm(probation_length_days ~  prior_conviction_felony_flag_count + prior_conviction_misd_flag_count  + conviction_summ_f_violent_flag + conviction_summ_f_property_flag + conviction_summ_f_drug_flag  + conviction_sex_flag + conviction_sup_vio_flag + convicted_fcharge_count + convicted_mcharge_count + max_conv_hier + age + gender  + race, data = subset(df, sent_prison_flag == 0 & sent_jail_flag == 0 & sent_probation_flag ==1 & probation_length_days != 0))
+
+summary(prob_length)
+```
+Sentence suspension regressions
+```{r}
+#without county
+dftest <- df %>%
+  mutate(suspended_flag = if_else(sent_ex_suspended_flag == 1 | sent_imp_suspended_flag ==1, 1, 0)) %>%
+  filter(convicted_flag == 1 & sent_prison_flag == 0 & (sent_jail_flag == 1 | suspended_flag == 1)) 
 
 
+sent_susp <- glm(suspended_flag ~  prior_conviction_felony_flag_count + prior_conviction_misd_flag_count + conviction_summ_f_violent_flag + conviction_summ_f_property_flag + conviction_summ_f_drug_flag + conviction_sex_flag + conviction_sup_vio_flag + convicted_fcharge_count + convicted_mcharge_count + max_conv_hier + age + gender +race, data = dftest, family = 'poisson')
+
+suspended <- tidy(coeftest(sent_susp, vcov. = sandwich)) %>%
+  mutate(relative_risk = round(exp(estimate), 4))
+
+suspended
 ```
 
 Diagnostics
