@@ -25,6 +25,8 @@ library(beepr)
 library(sandwich) # for robust standard errors
 library(lmtest) # to run tests using the robust standard errors
 library(broom) # to get stuff out of the objects lmtest produces
+#library(blorr) #for pseudo R2 and other analytics
+library(pscl) #package for pseudo R2 (pR2 function)
 
 ```
 
@@ -1551,7 +1553,102 @@ filed <- tidy(coeftest(filed, vcov. = sandwich)) %>%
   mutate(relative_risk = round(exp(estimate), 4))
 
 filed
+
+
+
 ```
+
+
+Create function to get McFadden Pseudo R2 values for each variable in a regression
+```{r}
+
+mcfaddenpr2 <- function(d, dv, ivs){
+  df <- d
+  test_df <- lapply(c(1:nrow(ivs)), function(i){
+    test <- ivs %>%
+      slice(-i) %>%
+      mutate(missing = ivs$variable[i])
+    return(test)
+  }) %>% bind_rows %>%
+    bind_rows(ivs %>% mutate(missing = "full"))
+  
+  eqn_test <- lapply(c(1:length(unique(test_df$missing))), function(i){
+    vars <- unique(test_df$missing)
+    missing_var <- vars[i]
+    test <- test_df %>%
+      filter(missing == missing_var) %>%
+      select(variable)
+    
+    str_lst <- ""
+    for(i in c(1:nrow(test))){
+      
+      str_lst <- if_else(str_lst == "", paste0(test$variable[i]), paste0(str_lst, " + ", test$variable[i]))
+      }
+    
+    fun_str <- paste0("glm(", dv, " ~ ", str_lst, ", data = df, family = 'poisson')")
+    
+
+    test_mod <- eval(parse(text = fun_str))
+    test_pr2 <- as.tibble(pR2(test_mod)[4])%>%
+              mutate(model = missing_var)
+    return(test_pr2)
+  }) %>%
+    bind_rows() %>%
+    mutate(difference = value[model == "full"] - value)
+  return(eqn_test)
+}
+```
+
+Diagnostic code
+```{r}
+#use pseudo r2 function to look at all pseudo r2 values for given dv and ivs (assuming glm with family = 'poisson')
+dv <- "filed_flag"
+ivs <- tibble(variable = c("arrest_f_offense_type", "race", "gender"))
+
+test <- mcfaddenpr2(df, dv, ivs)
+
+#####
+
+#extract mcfadden pseudo-r2 values
+
+r2s <- as.tibble(pR2(filed)[4]) %>%
+  mutate(model = "full")
+
+r2s <- as.tibble(pR2(glm(filed_flag ~  prior_conviction_felony_flag_count + prior_conviction_misd_flag_count + arrest_f_offense_type + arrest_sex_flag + arrest_dv_flag + arrested_mcharge_count + arrested_fcharge_count + age + gender, data = df, family = 'poisson'))[4]) %>%
+            mutate(model = "minus race") %>%
+            bind_rows(r2s)
+
+r2s <- as.tibble(pR2(glm(filed_flag ~  prior_conviction_felony_flag_count + prior_conviction_misd_flag_count + arrest_f_offense_type + arrest_sex_flag + arrest_dv_flag + arrested_mcharge_count + arrested_fcharge_count + age + race, data = df, family = 'poisson'))[4]) %>%
+            mutate(model = "minus gender") %>%
+            bind_rows(r2s)
+
+r2s <- r2s %>%
+  mutate(difference = value[model == "full"] - value)
+
+full_model = glm(filed_flag ~ arrest_f_offense_type + race + gender, data = df, family = 'poisson')
+
+# r2s <- as.tibble(pR2(full_model)[4]) %>%
+#   mutate(model = "full")
+
+# tidy(coeftest(full_model, vcov. = sandwich))
+
+    #test_mod <- glm(filed_flag ~ get(test$variable[1]) + get(test$variable[2]), data = df, family = 'poisson')
+
+test = "glm(filed_flag ~ arrest_f_offense_type + race + gender, data = df, family = 'poisson')"
+eval(parse(text = test))
+
+is.na(blah)
+
+test = ""
+for(i in c(1:3)){
+  test <- if_else(test == "", paste0(i), paste0(test, " + ", i))
+}
+
+test <- tibble(x = c(1, 1, 2, 4, 4, 5, 6), y = c(1, 1, 1, 1, 1, 1, 1))
+unique(test$x)
+str(test)
+```
+
 
 Conviction regressions
 ```{r}
@@ -1587,6 +1684,7 @@ dftest %>%
   select(filing_reduction_perc, conv_reduction_perc, filing_reduction_scaled, conv_reduction_scaled)
 
 ```
+
 Charge reduction regressions
 ```{r}
 file_reduc <- lm(filing_reduction_scaled ~  prior_conviction_felony_flag_count + prior_conviction_misd_flag_count + prior_max_conv_hier_scaled + arrest_sup_vio_flag + arrest_summ_f_violent_flag + arrest_summ_f_property_flag + arrest_summ_f_drug_flag + arrest_sex_flag + arrest_dv_flag + arrested_mcharge_count + arrested_fcharge_count + max_arrest_hier_scaled + age + gender +race + county + days_since_last_dispo, data = subset(df, filed_flag == 1))
@@ -1596,6 +1694,25 @@ summary(file_reduc)
 conv_reduc <- lm(conv_reduction_scaled ~  prior_conviction_felony_flag_count + prior_conviction_misd_flag_count + prior_max_conv_hier_scaled + arrest_sup_vio_flag + court_summ_f_violent_flag + court_summ_f_property_flag + court_summ_f_drug_flag + court_sex_flag + court_dv_flag + filed_mcharge_count + filed_fcharge_count + max_court_hier_scaled + age + gender +race + county + days_since_last_dispo, data = subset(df, convicted_flag == 1))
 
 summary(conv_reduc)
+
+#these are looking at just the ones that were filed/convicted, the amount of reduction. could also look at all and figure out how to set the reduction to appropriately account for fully dismissed/dropped charges.
+
+#try creating transformed variables
+dftest <- df %>%
+  mutate(max_court_transformed = 1/log(max_court_hier),
+         max_arrest_transformed = 1/log(max_arrest_hier),
+         max_conv_transformed = 1/log(max_conv_hier),
+         filing_reduction = if_else(filed_flag == 1, (max_arrest_transformed - max_court_transformed)*1000, max_arrest_transformed*1000),
+         conv_reduction = if_else(convicted_flag == 1, (max_court_transformed - max_conv_transformed)*1000, max_court_transformed*1000))
+
+file_reduc <- lm(filing_reduction ~  prior_conviction_felony_flag_count + prior_conviction_misd_flag_count + prior_max_conv_hier_scaled + arrest_sup_vio_flag + arrest_summ_f_violent_flag + arrest_summ_f_property_flag + arrest_summ_f_drug_flag + arrest_sex_flag + arrest_dv_flag + arrested_mcharge_count + arrested_fcharge_count + max_arrest_hier_scaled + age + gender +race + county + days_since_last_dispo, data = dftest)
+
+summary(file_reduc)
+
+conv_reduc <- lm(conv_reduction ~  prior_conviction_felony_flag_count + prior_conviction_misd_flag_count + prior_max_conv_hier_scaled + arrest_sup_vio_flag + court_summ_f_violent_flag + court_summ_f_property_flag + court_summ_f_drug_flag + court_sex_flag + court_dv_flag + filed_mcharge_count + filed_fcharge_count + max_court_hier_scaled + age + gender +race + county + days_since_last_dispo, data = dftest)
+
+summary(conv_reduc)
+
 
 ```
 
