@@ -27,6 +27,7 @@ library(lmtest) # to run tests using the robust standard errors
 library(broom) # to get stuff out of the objects lmtest produces
 #library(blorr) #for pseudo R2 and other analytics
 library(pscl) #package for pseudo R2 (pR2 function)
+library(RColorBrewer)
 
 ```
 
@@ -42,7 +43,7 @@ Import sample data
 
 #dsam <- vroom("G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/Raw Doj Data 2019.csv", n_max = 1000, col_types = c(.default = "c"))
 
-dsam <- vroom("G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/Raw DOJ Data 2019-Empty Variables Removed.csv", n_max = 1000, col_types = c(.default = "c"))
+dsam <- vroom("G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/Raw DOJ Data 2019-Empty Variables Removed.csv", n_max = 10000, col_types = c(.default = "c"))
 
 
 #obts <- vroom("G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/DALA_2019_JCC.csv")
@@ -516,11 +517,184 @@ Collapse each cycle (first version that was run January 2021, using cycle date)
 ```
 
 
-Collapse each cycle (second version, using dispo date, Feb 2021)
+Collapse each cycle (second version, using dispo date, Feb 2021. Inefficient -- see more efficient version below)
+```{r} 
+# 
+# ## 
+# 
+# suppressWarnings(
+# coll_df <- dsam %>%
+# 
+#   mutate(arrested_flag = if_else(grepl("Arrest", stp_ori_type_descr), 1, 0),
+#          filed_flag = if_else(grepl("Court", stp_ori_type_descr), 1, 0),
+#          convicted_flag =  if_else(grepl("^CONVICTED", disp_descr), 1, 0),
+#          dismissed_flag = if_else(grepl("DISCH|ACQUIT|DISMISSED|REL|REJ", disp_descr), 1, 0)) %>% 
+#   
+#   mutate(across(contains("flag"), ~if_else(is.na(.x), 0, .x))) %>%
+#  
+#   mutate(hierarchy = if_else(is.na(hierarchy) | hierarchy == "0", 1e6, as.numeric(hierarchy))) %>%
+#   mutate(sentence_date = if_else(!is.na(sent_order), stp_event_date, as_date(NA_character_))) %>%
+#   
+#   ##adjust sentence indicators to account for suspended sentences
+#   ## first deal with within each count to cancel out suspended jail/prison sentences
+#   #this part still needs to use cycle date because it needs to be by count
+#   group_by(subject_id, cyc_date, cnt_order) %>%
+#   
+#   mutate(sent_ex_suspended_flag = max(sent_ex_suspended_flag),
+#          sent_imp_suspended_flag = max(sent_imp_suspended_flag),
+#          sent_prison_flag = if_else(sent_imp_suspended_flag == 1, 0, sent_prison_flag),
+#          sent_jail_flag = if_else(sent_imp_suspended_flag == 1, 0, sent_jail_flag)) %>%
+#   
+#   #this version will now collapse to the person-disposition rather than the person-cycle, since sometimes multiple arrests are rolled into a single disposition
+#   group_by(subject_id, dispo_date) %>%
+#   
+#   #count the number of unique cycles that were collapsed
+#   mutate(combined_cycles_count = length(unique(cyc_date))) %>%
+#   
+#   #how should concurrent sentences be treated? looked at instances, and appears to be used inconsistently, sometimes when there is no other sentence for it to be concurrent with. could do max instead of sum when there is a concurrent flag, but in cases with more than 2 sentences this may not be correct. probably best to leave as is. 
+#   mutate(prison_length_days = sum(sent_length_days[sent_prison_flag == 1]),
+#          jail_length_days = sum(sent_length_days[sent_jail_flag == 1]),
+#          probation_length_days = sum(sent_length_days[sent_probation_flag == 1]),
+#          #probation length will be incorrect in cases where there is a suspended sentence with no probation term specified
+#          sent_probation_flag = if_else(sent_ex_suspended_flag == 1 | sent_imp_suspended_flag == 1, 1, max(sent_probation_flag))) %>%
+#   mutate(across(matches("sent_.*_flag"), max)) %>%
+#     
+#   #create counts for number of m/f charges arrested/filed/convicted --- CHECK THIS
+#   mutate(arrested_mcharge_count = length(unique(cnt_order[arrest_misd_flag == 1 & arrested_flag ==1])),
+#          filed_mcharge_count = length(unique(cnt_order[court_misd_flag == 1 & filed_flag ==1])),
+#          convicted_mcharge_count = length(unique(cnt_order[conviction_misd_flag == 1 & convicted_flag ==1])),
+#          arrested_fcharge_count = length(unique(cnt_order[arrest_felony_flag == 1 & arrested_flag ==1])),
+#          filed_fcharge_count = length(unique(cnt_order[court_felony_flag == 1 & filed_flag ==1])),
+#          convicted_fcharge_count = length(unique(cnt_order[conviction_felony_flag == 1 & convicted_flag ==1]))) %>%
+#   
+#   #this will max the relevant flags within each cycle so that they will be kept in the collapse
+#   mutate(across(matches("arrest_.*_flag"), ~if_else(sum(arrested_flag) == 0, 0, max(.x[arrested_flag == 1]))),
+#          across(matches("court_.*_flag"), ~if_else(sum(filed_flag) == 0, 0, max(.x[filed_flag == 1]))),
+#          across(matches("conviction_.*_flag"), ~if_else(sum(convicted_flag) == 0, 0, max(.x[convicted_flag == 1])))) %>%
+#   
+#   mutate(max_arrest_hier = if_else(sum(arrested_flag) == 0, 1e6, min(hierarchy[arrested_flag == 1])),
+#          max_court_hier = if_else(sum(filed_flag) == 0, 1e6, min(hierarchy[filed_flag == 1])),
+#          max_conv_hier = if_else(sum(convicted_flag) == 0, 1e6, min(hierarchy[convicted_flag == 1]))) %>%
+#   
+#   mutate(across(c(arrested_flag, filed_flag, convicted_flag, dismissed_flag, arrest_disp, court_disp), max)) %>%
+#   
+#   #keep the earliest arrest date (cycle date) associated with the disposition, and the earliest sentence date, and youngest arrest age
+#   mutate(cyc_date = min(cyc_date, na.rm = T),
+#          cyc_age = min(cyc_age, na.rm = T),
+#          sentence_date = min(sentence_date, na.rm = T),
+#          prob_end_date = if_else(sent_probation_flag == 1, sentence_date + probation_length_days, as_date("1800-01-01"))) %>%
+#   
+#   #combine qualifiers and remove "NA"s
+#   mutate(offense_qual_lst = gsub(",NA|NA,","", paste(offense_qual_lst, collapse = ",")),
+#          offense_qual_lst = if_else(offense_qual_lst == "NA", NA_character_, offense_qual_lst)) %>%
+#   
+#   ungroup() %>%
+#   
+#   distinct(subject_id, dispo_date, .keep_all = T) 
+# )
+# 
+# #occasionally there is more than one county listed, or some of the rows list the county as "UNKNOWN". Not very many instances, and it looks like often the first line is not the missing one, so currently not worrying about this. Looks like it is when the arrest and court actions are in different counties. In most of these (already few) cases, the court county is missing. In very few cases there is a different county listed for arrest and court counties. 
+# 
+# # coll_df %>%
+# #   select(-c(stp_order, stp_event_date, stp_type_code, stp_type_descr, stp_ori_type_descr, cnt_order, disp_date, offense_code, offense_descr, join_var, offense_toc, disp_order, disp_code, conv_stat_code, conv_stat_descr, sent_order, sent_loc_descr, sent_length, sent_time_descr, offense_orig, offense_stat, offense, charge_level, charge_code, charge, master_charge_description, hierarchy, jbsis_code))
+
+```
+
+Collapse each cycle (third version, using dispo date, Feb 2021. Made more efficient, this version run 2.16.21)
+```{r}
+# 
+# ## 
+# suppressWarnings(
+# coll_df <- dsam %>%
+# 
+#   mutate(arrested_flag = if_else(grepl("Arrest", stp_ori_type_descr), 1, 0),
+#          filed_flag = if_else(grepl("Court", stp_ori_type_descr), 1, 0),
+#          convicted_flag =  if_else(grepl("^CONVICTED", disp_descr), 1, 0),
+#          dismissed_flag = if_else(grepl("DISCH|ACQUIT|DISMISSED|REL|REJ", disp_descr), 1, 0)) %>% 
+#   
+#   mutate(across(contains("flag"), ~if_else(is.na(.x), 0, .x))) %>%
+# 
+#   mutate(hierarchy = if_else(is.na(hierarchy) | hierarchy == "0", 1e6, as.numeric(hierarchy))) %>%
+#   mutate(sentence_date = if_else(!is.na(sent_order), stp_event_date, as_date(NA_character_))) %>%
+#   
+#   ##adjust sentence indicators to account for suspended sentences
+#   ## first deal with within each count to cancel out suspended jail/prison sentences
+#   #this part still needs to use cycle date because it needs to be by count
+#   group_by(subject_id, cyc_date, cnt_order) %>%
+#   
+#   mutate(sent_ex_suspended_flag = max(sent_ex_suspended_flag),
+#          sent_imp_suspended_flag = max(sent_imp_suspended_flag),
+#          sent_prison_flag = if_else(sent_imp_suspended_flag == 1, 0, sent_prison_flag),
+#          sent_jail_flag = if_else(sent_imp_suspended_flag == 1, 0, sent_jail_flag)) %>%
+#   ungroup() %>%
+#   
+#   mutate(prison_length_days = if_else(sent_prison_flag == 1, sent_length_days, 0),
+#          jail_length_days = if_else(sent_jail_flag == 1, sent_length_days, 0),
+#          probation_length_days = if_else(sent_probation_flag == 1, sent_length_days, 0)) %>%
+#   
+#   mutate(max_arrest_hier = if_else(arrested_flag == 1, hierarchy, 1e6),
+#          max_court_hier = if_else(filed_flag == 1, hierarchy, 1e6),
+#          max_conv_hier = if_else(convicted_flag == 1, hierarchy, 1e6)) %>%
+#   
+#   #this version will now collapse to the person-disposition rather than the person-cycle, since sometimes multiple arrests are rolled into a single disposition
+#   group_by(subject_id, dispo_date) %>%
+#   
+#   #count the number of unique cycles that were collapsed
+#   mutate(combined_cycles_count = length(unique(cyc_date))) %>%
+#   
+#   #how should concurrent sentences be treated? looked at instances, and appears to be used inconsistently, sometimes when there is no other sentence for it to be concurrent with. could do max instead of sum when there is a concurrent flag, but in cases with more than 2 sentences this may not be correct. probably best to leave as is. 
+#   mutate(prison_length_days = sum(prison_length_days),
+#          jail_length_days = sum(jail_length_days),
+#          probation_length_days = sum(probation_length_days),
+#          #probation length will be incorrect in cases where there is a suspended sentence with no probation term specified
+#          sent_probation_flag = if_else(sent_ex_suspended_flag == 1 | sent_imp_suspended_flag == 1, 1, max(sent_probation_flag))) %>%
+#   mutate(across(matches("sent_.*_flag"), max)) %>%
+#     
+#   #create counts for number of m/f charges arrested/filed/convicted --- CHECK THIS
+#   mutate(arrested_mcharge_count = n_distinct(cnt_order[arrest_misd_flag == 1]),
+#          filed_mcharge_count = n_distinct(cnt_order[court_misd_flag == 1]),
+#          convicted_mcharge_count = n_distinct(cnt_order[conviction_misd_flag == 1]),
+#          arrested_fcharge_count = n_distinct(cnt_order[arrest_felony_flag == 1]),
+#          filed_fcharge_count = n_distinct(cnt_order[court_felony_flag == 1]),
+#          convicted_fcharge_count = n_distinct(cnt_order[conviction_felony_flag == 1])) %>%
+#   
+#   #this will max the relevant flags within each cycle so that they will be kept in the collapse
+#   mutate(across(matches("flag"), max)) %>%
+#   
+#   mutate(max_arrest_hier = max(max_arrest_hier),
+#          max_court_hier = max(max_court_hier),
+#          max_conv_hier = max(max_conv_hier)) %>%
+#   
+#   mutate(across(c(arrest_disp, court_disp), max)) %>%
+#   
+#   #keep the earliest arrest date (cycle date) associated with the disposition, and the earliest sentence date, and youngest arrest age
+#   mutate(cyc_date = min(cyc_date, na.rm = T),
+#          cyc_age = min(cyc_age, na.rm = T),
+#          sentence_date = min(sentence_date, na.rm = T),
+#          prob_end_date = if_else(sent_probation_flag == 1, sentence_date + probation_length_days, as_date("1800-01-01"))) %>%
+#   
+#   #combine qualifiers and remove "NA"s
+#   mutate(offense_qual_lst = gsub(",NA|NA,","", paste(offense_qual_lst, collapse = ",")),
+#          offense_qual_lst = if_else(offense_qual_lst == "NA", NA_character_, offense_qual_lst)) %>%
+#   
+#   ungroup() %>%
+#   
+#   distinct(subject_id, dispo_date, .keep_all = T) 
+# )
+# 
+# rm(dsam)
+# 
+# #occasionally there is more than one county listed, or some of the rows list the county as "UNKNOWN". Not very many instances, and it looks like often the first line is not the missing one, so currently not worrying about this. Looks like it is when the arrest and court actions are in different counties. In most of these (already few) cases, the court county is missing. In very few cases there is a different county listed for arrest and court counties. 
+# 
+# # coll_df %>%
+# #   select(-c(stp_order, stp_event_date, stp_type_code, stp_type_descr, stp_ori_type_descr, cnt_order, disp_date, offense_code, offense_descr, join_var, offense_toc, disp_order, disp_code, conv_stat_code, conv_stat_descr, sent_order, sent_loc_descr, sent_length, sent_time_descr, offense_orig, offense_stat, offense, charge_level, charge_code, charge, master_charge_description, hierarchy, jbsis_code))
+
+```
+
+Collapse each cycle (fourth version, using dispo date, Feb 2021. Made more efficient. and fixed errors from 2.16.21 version which left out a lot of things because they lacked disposition dates)
 ```{r}
 
 ## 
-
 suppressWarnings(
 coll_df <- dsam %>%
 
@@ -530,9 +704,13 @@ coll_df <- dsam %>%
          dismissed_flag = if_else(grepl("DISCH|ACQUIT|DISMISSED|REL|REJ", disp_descr), 1, 0)) %>% 
   
   mutate(across(contains("flag"), ~if_else(is.na(.x), 0, .x))) %>%
- 
+
   mutate(hierarchy = if_else(is.na(hierarchy) | hierarchy == "0", 1e6, as.numeric(hierarchy))) %>%
   mutate(sentence_date = if_else(!is.na(sent_order), stp_event_date, as_date(NA_character_))) %>%
+  
+  #create a disposition date to attach to all steps in a cycle
+  group_by(subject_id, cyc_date) %>%
+  mutate(cycle_dispo_date = max(dispo_date, na.rm = T)) %>%
   
   ##adjust sentence indicators to account for suspended sentences
   ## first deal with within each count to cancel out suspended jail/prison sentences
@@ -544,38 +722,45 @@ coll_df <- dsam %>%
          sent_prison_flag = if_else(sent_imp_suspended_flag == 1, 0, sent_prison_flag),
          sent_jail_flag = if_else(sent_imp_suspended_flag == 1, 0, sent_jail_flag)) %>%
   
+  ungroup() %>%
+  
+  mutate(prison_length_days = if_else(sent_prison_flag == 1, sent_length_days, 0),
+         jail_length_days = if_else(sent_jail_flag == 1, sent_length_days, 0),
+         probation_length_days = if_else(sent_probation_flag == 1, sent_length_days, 0)) %>%
+  
+  mutate(max_arrest_hier = if_else(arrested_flag == 1, hierarchy, 1e6),
+         max_court_hier = if_else(filed_flag == 1, hierarchy, 1e6),
+         max_conv_hier = if_else(convicted_flag == 1, hierarchy, 1e6)) %>%
+  
   #this version will now collapse to the person-disposition rather than the person-cycle, since sometimes multiple arrests are rolled into a single disposition
-  group_by(subject_id, dispo_date) %>%
+  group_by(subject_id, cycle_dispo_date) %>%
   
   #count the number of unique cycles that were collapsed
   mutate(combined_cycles_count = length(unique(cyc_date))) %>%
   
   #how should concurrent sentences be treated? looked at instances, and appears to be used inconsistently, sometimes when there is no other sentence for it to be concurrent with. could do max instead of sum when there is a concurrent flag, but in cases with more than 2 sentences this may not be correct. probably best to leave as is. 
-  mutate(prison_length_days = sum(sent_length_days[sent_prison_flag == 1]),
-         jail_length_days = sum(sent_length_days[sent_jail_flag == 1]),
-         probation_length_days = sum(sent_length_days[sent_probation_flag == 1]),
+  mutate(prison_length_days = sum(prison_length_days),
+         jail_length_days = sum(jail_length_days),
+         probation_length_days = sum(probation_length_days),
          #probation length will be incorrect in cases where there is a suspended sentence with no probation term specified
          sent_probation_flag = if_else(sent_ex_suspended_flag == 1 | sent_imp_suspended_flag == 1, 1, max(sent_probation_flag))) %>%
-  mutate(across(matches("sent_.*_flag"), max)) %>%
     
   #create counts for number of m/f charges arrested/filed/convicted --- CHECK THIS
-  mutate(arrested_mcharge_count = length(unique(cnt_order[arrest_misd_flag == 1 & arrested_flag ==1])),
-         filed_mcharge_count = length(unique(cnt_order[court_misd_flag == 1 & filed_flag ==1])),
-         convicted_mcharge_count = length(unique(cnt_order[conviction_misd_flag == 1 & convicted_flag ==1])),
-         arrested_fcharge_count = length(unique(cnt_order[arrest_felony_flag == 1 & arrested_flag ==1])),
-         filed_fcharge_count = length(unique(cnt_order[court_felony_flag == 1 & filed_flag ==1])),
-         convicted_fcharge_count = length(unique(cnt_order[conviction_felony_flag == 1 & convicted_flag ==1]))) %>%
+  mutate(arrested_mcharge_count = n_distinct(cnt_order[arrest_misd_flag == 1]),
+         filed_mcharge_count = n_distinct(cnt_order[court_misd_flag == 1]),
+         convicted_mcharge_count = n_distinct(cnt_order[conviction_misd_flag == 1]),
+         arrested_fcharge_count = n_distinct(cnt_order[arrest_felony_flag == 1]),
+         filed_fcharge_count = n_distinct(cnt_order[court_felony_flag == 1]),
+         convicted_fcharge_count = n_distinct(cnt_order[conviction_felony_flag == 1])) %>%
   
-  #this will max the relevant flags within each cycle so that they will be kept in the collapse
-  mutate(across(matches("arrest_.*_flag"), ~if_else(sum(arrested_flag) == 0, 0, max(.x[arrested_flag == 1]))),
-         across(matches("court_.*_flag"), ~if_else(sum(filed_flag) == 0, 0, max(.x[filed_flag == 1]))),
-         across(matches("conviction_.*_flag"), ~if_else(sum(convicted_flag) == 0, 0, max(.x[convicted_flag == 1])))) %>%
+  #this will max the relevant flags within each disposition so that they will be kept in the collapse
+  mutate(across(contains("flag"), max)) %>%
   
-  mutate(max_arrest_hier = if_else(sum(arrested_flag) == 0, 1e6, min(hierarchy[arrested_flag == 1])),
-         max_court_hier = if_else(sum(filed_flag) == 0, 1e6, min(hierarchy[filed_flag == 1])),
-         max_conv_hier = if_else(sum(convicted_flag) == 0, 1e6, min(hierarchy[convicted_flag == 1]))) %>%
+  mutate(max_arrest_hier = max(max_arrest_hier),
+         max_court_hier = max(max_court_hier),
+         max_conv_hier = max(max_conv_hier)) %>%
   
-  mutate(across(c(arrested_flag, filed_flag, convicted_flag, dismissed_flag, arrest_disp, court_disp), max)) %>%
+  mutate(across(c(arrest_disp, court_disp), max)) %>%
   
   #keep the earliest arrest date (cycle date) associated with the disposition, and the earliest sentence date, and youngest arrest age
   mutate(cyc_date = min(cyc_date, na.rm = T),
@@ -589,8 +774,10 @@ coll_df <- dsam %>%
   
   ungroup() %>%
   
-  distinct(subject_id, dispo_date, .keep_all = T) 
+  distinct(subject_id, cycle_dispo_date, .keep_all = T) 
 )
+
+rm(dsam)
 
 #occasionally there is more than one county listed, or some of the rows list the county as "UNKNOWN". Not very many instances, and it looks like often the first line is not the missing one, so currently not worrying about this. Looks like it is when the arrest and court actions are in different counties. In most of these (already few) cases, the court county is missing. In very few cases there is a different county listed for arrest and court counties. 
 
@@ -675,6 +862,17 @@ Old code and diagnostics
 # 
 # coll_df %>%
 #   filter(sent_imp_suspended_flag == 1)
+
+
+# df <- tibble(offense_flag = 1:3, xyz = 1:3, test_flag = 11:13, new_flag = 21:23)
+# 
+# 
+# df %>%
+#   mutate(across(matches("flag"), max))
+# 
+
+
+
 ```
 
 Sample code from noah for lag
@@ -783,7 +981,7 @@ doj_df <- coll_df %>%
 
 
 hist_collapse <- doj_df %>%
-  arrange(dispo_date) %>%
+  arrange(cycle_dispo_date) %>%
   group_by(subject_id) %>%
   mutate(days_prior_prison = cumsum(lag(prison_length_days, default = 0)),
          days_prior_jail = cumsum(lag(jail_length_days, default = 0)),
@@ -811,7 +1009,7 @@ hist_collapse <- doj_df %>%
 #filter out the dispositions in 2019
 
 dispos <- hist_collapse %>%
-  filter(year(dispo_date) == 2019) %>%
+  filter(year(cycle_dispo_date) == 2019) %>%
   mutate(on_prob = if_else(prior_conv_date < cyc_date & prior_prob_end_date > cyc_date, 1, 0))
 
 
@@ -995,6 +1193,34 @@ Diagnostics
 #   filter(stp_type_descr %in% c("ARREST/DETAINED/CITED", "COURT ACTION")) %>%
 #   count(disp_descr) %>%
 #   arrange(desc(n))
+
+dispos %>%
+  count(arrest_felony_flag, court_felony_flag, conviction_felony_flag)
+
+dispos %>%
+  count(arrested_fcharge_count)
+
+dispos %>%
+  count(combined_cycles_count)
+
+dsam %>%
+  filter(!is.na(dispo_date)) %>%
+  group_by(subject_id, cyc_date) %>%
+  mutate(n = length(unique(dispo_date))) %>%
+  ungroup() %>%
+  filter(n>1) %>%
+  select(subject_id, cyc_date, dispo_date, stp_ori_type_descr, offense_toc)
+
+dsam %>%
+  filter(arrest_felony_flag == 1) %>%
+  distinct(subject_id, dispo_date)
+
+dsam %>%
+  filter(is.na(dispo_date)) %>%
+  select(dispo_date, disp_date, stp_event_date, cyc_date, stp_ori_type_descr)
+
+dispos %>%
+  count(arrest_felony_flag)
 ```
 
 
@@ -1147,15 +1373,29 @@ ca_sex <- ca_sex %>%
 Load collapsed dataset
 ```{r}
 load("G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/Dispos.RData")
+load("G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/Dispos Feb 2021.RData")
+
 
 df <- dispos %>%
   filter(arrest_felony_flag == 1) %>% #filter to only dispositions with a felony arrest, since there are also misdemeanor-only arrests for people who have other 2019 felony arrest dispositions
-  select(-cyc_order) %>%  #remove useless field
+  #select(-cyc_order) %>%  #remove useless field
   rename(county = stp_ori_cnty_name,
          age = cyc_age)
 
+
+
 rm(dispos)
 
+dispos %>%
+  count(sent_prison_flag)
+  count(arrest_summ_f_drug_flag, arrest_summ_f_violent_flag, arrest_summ_f_other_flag, arrest_summ_f_other_sex_flag, arrest_summ_f_property_flag, arrest_felony_flag)
+  
+  df %>%
+    count(sent_prison_flag)
+```
+
+Diagnostic code
+```{r}
 #did i order the lag collapse by cycle date or dispo date?? should be dispo date. it was by cycle date. do they often dispose of cases out of order? looks like at least some of the time. there are a lot of overlapping cycles. should re-run the collapse, ordered by dispo date
 #sometimes more than one cycle has the same dispo date, i suppose the cases were rolled together, how should i deal with this? could collapse these instances before the historical collapse and treat cycles with the same dispo date as one
 #new code will collapse by dispo date and keep a count of number of cycles that were collapsed
@@ -1198,6 +1438,8 @@ df %>%
   ungroup() %>%
   filter(nn>1) %>%
   arrange(subject_id)
+
+rm(d2)
 ```
 
 
@@ -1532,6 +1774,41 @@ df %>%
 df %>%
   select(arrest_f_offense_type)
 ```
+
+Tables for Appendix D
+```{r}
+ggplot(df, aes(fill=race, y= mean(convicted_flag), x=arrest_f_offense_type)) + 
+    geom_bar(position="dodge", stat="identity") +
+    scale_color_brewer(palette = "Set1") #+
+    #ggtitle("Conviction rate") +
+    #facet_wrap(~arrest_f_offense_type) +
+    #theme(legend.position="none") +
+    #xlab("")
+
+#Conviction rate by race
+df %>%
+  filter(race %in% c("Black", "White", "Hispanic", "Asian/PI")) %>%
+  group_by(race) %>%
+  summarise(mean(convicted_flag)) %>%
+  rename(conviction_rate = 'mean(convicted_flag)') %>%
+  ggplot(aes(fill=race, y= conviction_rate, x=race)) + 
+    geom_bar(position="dodge", stat="identity") +
+    scale_color_brewer(palette = "Set1")
+
+df %>%
+  filter(race %in% c("Black", "White", "Hispanic", "Asian/PI")) %>%
+  filter(arrest_f_offense_type %in% c("Drug", "Property", "Violent")) %>%
+  group_by(race, arrest_f_offense_type) %>%
+  summarise(mean(convicted_flag)) %>%
+  rename(conviction_rate = 'mean(convicted_flag)') %>%
+  ggplot(aes(fill=race, y= conviction_rate, x=arrest_f_offense_type)) + 
+    geom_bar(position="dodge", stat="identity") +
+    scale_color_brewer(palette = "Set1")
+
+```
+
+
+
 Set desired base levels
 ```{r}
 df$race <- relevel(df$race, ref="White")
