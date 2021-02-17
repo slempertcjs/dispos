@@ -43,7 +43,7 @@ Import sample data
 
 #dsam <- vroom("G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/Raw Doj Data 2019.csv", n_max = 1000, col_types = c(.default = "c"))
 
-dsam <- vroom("G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/Raw DOJ Data 2019-Empty Variables Removed.csv", n_max = 10000, col_types = c(.default = "c"))
+dsam <- vroom("G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/Raw DOJ Data 2019-Empty Variables Removed.csv",  col_types = c(.default = "c"))
 
 
 #obts <- vroom("G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/DALA_2019_JCC.csv")
@@ -784,7 +784,7 @@ coll_df <- dsam %>%
   distinct(subject_id, cycle_dispo_date, .keep_all = T) 
 )
 
-# rm(dsam)
+rm(dsam)
 
 #occasionally there is more than one county listed, or some of the rows list the county as "UNKNOWN". Not very many instances, and it looks like often the first line is not the missing one, so currently not worrying about this. Looks like it is when the arrest and court actions are in different counties. In most of these (already few) cases, the court county is missing. In very few cases there is a different county listed for arrest and court counties. 
 
@@ -1020,8 +1020,8 @@ dispos <- hist_collapse %>%
   mutate(on_prob = if_else(prior_conv_date < cyc_date & prior_prob_end_date > cyc_date, 1, 0))
 
 
-# save(dispos, file = "Dispos Feb 17.RData")
-# save(hist_collapse, file = "History collapse Feb 17.RData")
+save(dispos, file = "Dispos Feb 17.RData")
+save(hist_collapse, file = "History collapse Feb 17.RData")
 
 ```
 
@@ -1051,32 +1051,32 @@ Diagnostics
 #   mutate(totf = summ_f_violent_flag+ summ_f_property_flag + summ_f_drug_flag + summ_f_other_sex_flag + summ_f_other_flag) %>%
 #   filter(totf >1)
 
-suppressWarnings(dsam %>%
-  group_by(subject_id, cyc_date) %>%
-  mutate(dispo_date = max(dispo_date, na.rm = T),
-         dispo_date = if_else(dispo_date == -Inf, as_date(NA), dispo_date),
-         stp_event_date = max(stp_event_date, na.rm = T),
-         stp_event_date = if_else(stp_event_date == -Inf, as_date(NA), stp_event_date),
-         cycle_dispo_date = case_when( !is.na(dispo_date) ~ dispo_date,
-                                       !is.na(stp_event_date) ~ stp_event_date,
-                                       T ~ cyc_date)) %>%
-  ungroup() %>%
-  distinct(subject_id, cycle_dispo_date, .keep_all = T) %>%
-  select(subject_id, cycle_dispo_date, dispo_date, cyc_date, stp_event_date))
-
-suppressWarnings(dsam %>%
-  group_by(subject_id, cyc_date) %>%
-  mutate(dispo_date = max(dispo_date, na.rm = T)) %>%
-  ungroup() %>%
-  filter()
-  group_by(subject_id, dispo_date) %>%
-  add_count(cyc_date) %>%
-  ungroup() %>%
-  filter(n>1))
-  distinct(subject_id, cyc_date, .keep_all = T)) %>%
-  select(subject_id, dispo_date, cyc_date)
-
-is.na(as_date(NA))
+# suppressWarnings(dsam %>%
+#   group_by(subject_id, cyc_date) %>%
+#   mutate(dispo_date = max(dispo_date, na.rm = T),
+#          dispo_date = if_else(dispo_date == -Inf, as_date(NA), dispo_date),
+#          stp_event_date = max(stp_event_date, na.rm = T),
+#          stp_event_date = if_else(stp_event_date == -Inf, as_date(NA), stp_event_date),
+#          cycle_dispo_date = case_when( !is.na(dispo_date) ~ dispo_date,
+#                                        !is.na(stp_event_date) ~ stp_event_date,
+#                                        T ~ cyc_date)) %>%
+#   ungroup() %>%
+#   distinct(subject_id, cycle_dispo_date, .keep_all = T) %>%
+#   select(subject_id, cycle_dispo_date, dispo_date, cyc_date, stp_event_date))
+# 
+# suppressWarnings(dsam %>%
+#   group_by(subject_id, cyc_date) %>%
+#   mutate(dispo_date = max(dispo_date, na.rm = T)) %>%
+#   ungroup() %>%
+#   filter()
+#   group_by(subject_id, dispo_date) %>%
+#   add_count(cyc_date) %>%
+#   ungroup() %>%
+#   filter(n>1))
+#   distinct(subject_id, cyc_date, .keep_all = T)) %>%
+#   select(subject_id, dispo_date, cyc_date)
+# 
+# is.na(as_date(NA))
 ```
 
 OLD collapse of historical cycles
@@ -1227,33 +1227,33 @@ Diagnostics
 #   count(disp_descr) %>%
 #   arrange(desc(n))
 
-dispos %>%
-  count(arrest_felony_flag, court_felony_flag, conviction_felony_flag)
-
-dispos %>%
-  count(arrested_fcharge_count)
-
-dispos %>%
-  count(combined_cycles_count)
-
-dsam %>%
-  filter(!is.na(dispo_date)) %>%
-  group_by(subject_id, cyc_date) %>%
-  mutate(n = length(unique(dispo_date))) %>%
-  ungroup() %>%
-  filter(n>1) %>%
-  select(subject_id, cyc_date, dispo_date, stp_ori_type_descr, offense_toc)
-
-dsam %>%
-  filter(arrest_felony_flag == 1) %>%
-  distinct(subject_id, dispo_date)
-
-dsam %>%
-  filter(is.na(dispo_date)) %>%
-  select(dispo_date, disp_date, stp_event_date, cyc_date, stp_ori_type_descr)
-
-dispos %>%
-  count(arrest_felony_flag)
+# dispos %>%
+#   count(arrest_felony_flag, court_felony_flag, conviction_felony_flag)
+# 
+# dispos %>%
+#   count(arrested_fcharge_count)
+# 
+# dispos %>%
+#   count(combined_cycles_count)
+# 
+# dsam %>%
+#   filter(!is.na(dispo_date)) %>%
+#   group_by(subject_id, cyc_date) %>%
+#   mutate(n = length(unique(dispo_date))) %>%
+#   ungroup() %>%
+#   filter(n>1) %>%
+#   select(subject_id, cyc_date, dispo_date, stp_ori_type_descr, offense_toc)
+# 
+# dsam %>%
+#   filter(arrest_felony_flag == 1) %>%
+#   distinct(subject_id, dispo_date)
+# 
+# dsam %>%
+#   filter(is.na(dispo_date)) %>%
+#   select(dispo_date, disp_date, stp_event_date, cyc_date, stp_ori_type_descr)
+# 
+# dispos %>%
+#   count(arrest_felony_flag)
 ```
 
 
