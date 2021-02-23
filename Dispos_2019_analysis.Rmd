@@ -43,7 +43,7 @@ Import sample data
 
 #dsam <- vroom("G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/Raw Doj Data 2019.csv", n_max = 1000, col_types = c(.default = "c"))
 
-dsam <- vroom("G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/Raw DOJ Data 2019-Empty Variables Removed.csv",  col_types = c(.default = "c"))
+dsam <- vroom("G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/Raw DOJ Data 2019-Empty Variables Removed.csv", n_max = 10000, col_types = c(.default = "c"))
 
 
 #obts <- vroom("G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/DALA_2019_JCC.csv")
@@ -763,9 +763,9 @@ coll_df <- dsam %>%
   #this will max the relevant flags within each disposition so that they will be kept in the collapse
   mutate(across(contains("flag"), max)) %>%
   
-  mutate(max_arrest_hier = max(max_arrest_hier),
-         max_court_hier = max(max_court_hier),
-         max_conv_hier = max(max_conv_hier)) %>%
+  mutate(max_arrest_hier = min(max_arrest_hier),
+         max_court_hier = min(max_court_hier),
+         max_conv_hier = min(max_conv_hier)) %>%
   
   mutate(across(c(arrest_disp, court_disp), max)) %>%
   
@@ -784,7 +784,7 @@ coll_df <- dsam %>%
   distinct(subject_id, cycle_dispo_date, .keep_all = T) 
 )
 
-rm(dsam)
+#rm(dsam)
 
 #occasionally there is more than one county listed, or some of the rows list the county as "UNKNOWN". Not very many instances, and it looks like often the first line is not the missing one, so currently not worrying about this. Looks like it is when the arrest and court actions are in different counties. In most of these (already few) cases, the court county is missing. In very few cases there is a different county listed for arrest and court counties. 
 
@@ -980,6 +980,7 @@ Collapse historical cycles by person (version used for January 2021 collapse, ar
 
 Collapse historical cycles by person (version used for February 2021 collapse, arranged by dispo date)
 ```{r}
+
 #remove useless fields
 doj_df <- coll_df %>%
   select(-c(cyc_order, stp_order, stp_event_date, stp_type_code, stp_type_descr, stp_ori_type_descr, cnt_order, disp_date, offense_code, offense_descr, join_var, offense_toc, disp_order, disp_code, conv_stat_code, conv_stat_descr, sent_order, sent_loc_descr, sent_length, sent_time_descr, offense_orig, offense_stat, offense, charge_level, charge_code, charge, master_charge_description, hierarchy, summary_code, special_flag))
@@ -1020,8 +1021,8 @@ dispos <- hist_collapse %>%
   mutate(on_prob = if_else(prior_conv_date < cyc_date & prior_prob_end_date > cyc_date, 1, 0))
 
 
-save(dispos, file = "Dispos Feb 17.RData")
-save(hist_collapse, file = "History collapse Feb 17.RData")
+# save(dispos, file = "Dispos Feb 17.RData")
+# save(hist_collapse, file = "History collapse Feb 17.RData")
 
 ```
 
@@ -1405,9 +1406,10 @@ ca_sex <- ca_sex %>%
 
 Load collapsed dataset
 ```{r}
-load("G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/Dispos.RData")
-load("G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/Dispos Feb 2021.RData")
-
+# load("G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/Dispos.RData")
+#load("G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/Dispos Feb 2021.RData")
+load("G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/Dispos Feb 17.RData")
+## feb 17 version has incorrect hierarchy values, need to change max to min and re-run
 
 df <- dispos %>%
   filter(arrest_felony_flag == 1) %>% #filter to only dispositions with a felony arrest, since there are also misdemeanor-only arrests for people who have other 2019 felony arrest dispositions
@@ -1419,12 +1421,18 @@ df <- dispos %>%
 
 rm(dispos)
 
-dispos %>%
-  count(sent_prison_flag)
-  count(arrest_summ_f_drug_flag, arrest_summ_f_violent_flag, arrest_summ_f_other_flag, arrest_summ_f_other_sex_flag, arrest_summ_f_property_flag, arrest_felony_flag)
-  
-  df %>%
-    count(sent_prison_flag)
+# df %>%
+#   #count(sent_prison_flag)
+#   count(arrest_summ_f_drug_flag, arrest_summ_f_violent_flag, arrest_summ_f_other_flag, arrest_summ_f_other_sex_flag, arrest_summ_f_property_flag, arrest_felony_flag)
+#   
+#   df %>%
+#     count(sent_prison_flag)
+
+# df %>%
+#   count(on_prob) %>%
+#   mutate(perc = n/sum(n))
+
+
 ```
 
 Diagnostic code
@@ -1517,7 +1525,7 @@ df <- df %>%
         
         #create a variable to track number of days since last dispo (will change to conviction when re-collapse completes)
         #think about what to do for ppl with no priors
-        days_since_last_dispo = as.integer(dispo_date - prior_dispo_date), 
+        days_since_last_conv = as.integer(dispo_date - prior_conv_date), 
          
         #create scaled variables for hierarchy
         prior_max_conv_hier_scaled = scale(prior_max_conv_hier),
@@ -1626,6 +1634,9 @@ mean(df$prior_conviction_felony_flag_count) #mean prior felonies
 mean(df$prior_conviction_misd_flag_count) #mean prior misdos
 
 
+
+#### prior sentences
+
 df %>%
   filter(court_disp == 1) %>%
   mutate(prior_record_cat = case_when(prior_sent_prison_flag_count >0  ~ "Prior prison",
@@ -1648,6 +1659,8 @@ df %>%
   summarise(mean(days_prior_jail, na.rm = T)) # mean prior jail time is a little less than 2 years.
   # count(is.na(days_prior_jail)) %>%
   # mutate(percent = round(n/sum(n)*100, 1))
+
+
 ```
 
 Arrest offense type for felony defendants (court dispo)
@@ -1707,18 +1720,78 @@ df %>%
 
 Descriptive info on offenses and priors by race and age category
 ```{r}
-aggregate(cyc_age ~ race, data = df, FUN = mean)
+
+aggregate(age ~ race, data = df, FUN = mean)
 
 aggregate(age_cat ~ race, data = df, count)
 
 #priors by race
 df %>%
   group_by(race) %>%
-  summarise(n = n(), mean_age = mean(cyc_age), mean_prior_fs = mean(prior_conviction_felony_flag_count), mean_prior_ms = mean(prior_conviction_misd_flag_count))
+  summarise(n = n(), mean_age = mean(age), mean_prior_fs = mean(prior_conviction_felony_flag_count), mean_prior_ms = mean(prior_conviction_misd_flag_count))
 
 df %>%
   group_by(age_cat) %>%
   summarise(n = n(), mean_prior_fs = mean(prior_conviction_felony_flag_count), mean_prior_ms = mean(prior_conviction_misd_flag_count))
+
+df %>%
+  filter(court_disp == 1) %>%
+  mutate(prior_f_violent = if_else(prior_conviction_summ_f_violent_flag_count > 0, 1, 0),
+         prior_m_violent = if_else(prior_conviction_summ_m_violent_flag_count > 0, 1, 0),
+         prior_f_drug = if_else(prior_conviction_summ_f_drug_flag_count > 0, 1, 0),
+         prior_m_drug = if_else(prior_conviction_summ_m_drug_flag_count > 0, 1, 0),
+         prior_f_prop = if_else(prior_conviction_summ_f_property_flag_count > 0, 1, 0),
+         prior_m_prop = if_else(prior_conviction_summ_m_property_flag_count > 0, 1, 0)) %>%
+  group_by(race) %>%
+  summarise(across(c(prior_f_violent, prior_m_violent, prior_f_drug, prior_m_drug, prior_f_prop, prior_m_prop), mean))
+  summarise(mean(prior_f_violent), mean(prior_m_violent), mean(prior_f_drug), mean(prior_m_drug), mean(prior_f_prop), mean(prior_m_prop))
+
+  
+df %>%
+  filter(court_disp == 1) %>%
+  group_by(race) %>%
+  summarise(across(c(prior_conviction_summ_f_violent_flag_count, prior_conviction_summ_m_violent_flag_count, prior_conviction_summ_f_drug_flag_count, prior_conviction_summ_m_drug_flag_count, prior_conviction_summ_f_property_flag_count, prior_conviction_summ_m_property_flag_count, prior_conviction_summ_f_other_sex_flag_count, prior_conviction_summ_m_other_sex_flag_count, prior_conviction_summ_f_other_flag_count, prior_conviction_summ_m_other_flag_count), ~mean(.x>0)))
+#biggest racial differences in: prior felony violent, prior misdo drug
+
+
+df %>%
+  filter(court_disp == 1) %>%
+  group_by(race) %>%
+  summarise(across(contains("arrest_summ"), ~mean(.x>0)))
+
+df %>%
+  filter(prior_arrest_summ_f_drug_flag_count >0) %>%
+  group_by(race) %>%
+  summarise(across(matches("prior_conviction_summ_._drug"), ~mean(.x)))
+
+df %>%
+  filter(prior_arrest_summ_f_drug_flag_count >0) %>%
+  group_by(race) %>%
+  summarise(mean(prior_conviction_summ_f_drug_flag_count/prior_arrest_summ_f_drug_flag_count),
+            mean(prior_conviction_summ_m_drug_flag_count/prior_arrest_summ_f_drug_flag_count))
+
+df %>%
+  filter(prior_arrest_summ_m_drug_flag_count >0) %>%
+  group_by(race) %>%
+  summarise(mean(prior_conviction_summ_m_drug_flag_count/prior_arrest_summ_m_drug_flag_count),
+            mean(prior_conviction_summ_f_drug_flag_count/prior_arrest_summ_m_drug_flag_count))
+
+df %>%
+  filter(court_disp == 1) %>%
+  mutate(prior_drug = prior_conviction_summ_f_drug_flag_count + prior_conviction_summ_m_drug_flag_count) %>%
+  group_by(race) %>%
+  summarise(mean(prior_drug>0))
+  
+#time since prior conviction by race
+df %>%
+  group_by(race) %>%
+  summarise(mean(days_since_last_conv))
+
+#age at first arrest by race
+df %>%
+  group_by(race) %>%
+  summarise(quantile(age_first_dispo, probs = c(0.25)), mean(age_first_dispo), median(age_first_dispo), quantile(age_first_dispo, probs = c(0.75)))
+
 
 #offense categories by race
 df %>%
@@ -1984,6 +2057,11 @@ dftest <- df %>%
 #look at days since last dispo, except would need to correct for when they have no priors
 conv <- glm(convicted_flag ~  prior_conviction_felony_flag_count + prior_conviction_misd_flag_count + prior_max_conv_hier_scaled + arrest_sup_vio_flag + court_summ_f_violent_flag + court_summ_f_property_flag + court_summ_f_drug_flag + court_sex_flag + court_dv_flag + filed_mcharge_count + filed_fcharge_count + max_court_hier_scaled + age + gender +race + county + days_since_last_dispo, data = subset(df, filed_flag == 1), family = 'poisson')
 
+#temporarily remove hierarchy bc needs to be fixed in collapse
+#swap out arrest_sup_vio_flag for on_prob flag
+# try more detailed priors
+conv <- glm(convicted_flag ~  prior_conviction_summ_f_violent_flag_count + prior_conviction_summ_m_violent_flag_count + prior_conviction_summ_f_property_flag_count + prior_conviction_summ_m_property_flag_count + prior_conviction_summ_f_drug_flag_count + prior_conviction_summ_m_drug_flag_count + prior_conviction_sex_flag_count + on_prob + court_summ_f_violent_flag + court_summ_f_property_flag + court_summ_f_drug_flag + court_sex_flag + court_dv_flag + filed_mcharge_count + filed_fcharge_count  + age + gender +race, data = subset(df, filed_flag == 1), family = 'poisson')
+
 # summary(conv_county)
 conv <- tidy(coeftest(conv, vcov. = sandwich)) %>%
   mutate(relative_risk = round(exp(estimate), 4))
@@ -1993,6 +2071,8 @@ conv
 dftest %>%
   select(filing_reduction_perc, conv_reduction_perc, filing_reduction_scaled, conv_reduction_scaled)
 
+df %>%
+  select(prior_conviction_summ_f_property_flag_count)
 ```
 
 Charge reduction regressions
@@ -2054,6 +2134,11 @@ prison_norace <- glm(sent_prison_flag ~  prior_conviction_felony_flag_count + pr
 #non-binary
 # prison_county <- lm(sent_prison_flag ~  prior_conviction_felony_flag_count + prior_conviction_misd_flag_count + conviction_summ_f_violent_flag + conviction_summ_f_property_flag + conviction_summ_f_drug_flag + conviction_sex_flag + conviction_sup_vio_flag + convicted_fcharge_count + convicted_mcharge_count + max_conv_hier + cyc_age + gender +race + stp_ori_cnty_name, data = subset(df, convicted_flag == 1))
 
+#detailing priors by type
+prison_sent <- glm(sent_prison_flag ~  prior_conviction_summ_f_violent_flag_count + prior_conviction_summ_m_violent_flag_count + prior_conviction_summ_f_property_flag_count + prior_conviction_summ_m_property_flag_count + prior_conviction_summ_f_drug_flag_count + prior_conviction_summ_m_drug_flag_count + prior_conviction_sex_flag_count + on_prob + + conviction_summ_f_violent_flag + conviction_summ_f_property_flag + conviction_summ_f_drug_flag + conviction_sex_flag + conviction_sup_vio_flag + convicted_fcharge_count + convicted_mcharge_count  + age + gender + race, data = subset(df, convicted_flag == 1 & conviction_felony_flag == 1), family = 'poisson')
+
+#not counting misdos (priors or current)
+prison_sent <- glm(sent_prison_flag ~  prior_conviction_summ_f_violent_flag_count + prior_conviction_summ_f_property_flag_count +  prior_conviction_summ_f_drug_flag_count +  prior_conviction_sex_flag_count  + on_prob + + conviction_summ_f_violent_flag + conviction_summ_f_property_flag + conviction_summ_f_drug_flag + conviction_sex_flag + conviction_sup_vio_flag + convicted_fcharge_count + scale(age, scale = F)*scale(age_first_dispo, scale = F)*race + gender , data = subset(df, convicted_flag == 1 & conviction_felony_flag == 1 & race %in% c("Black", "White", "Hispanic", "Asian/PI")), family = 'poisson')
 
 #summary(prison_county)
 
@@ -2062,14 +2147,20 @@ pris_sent <- tidy(coeftest(prison_sent, vcov. = sandwich)) %>%
 
 pris_sent
 
-# likelihood ratio test to compare models with and without race
+ # likelihood ratio test to compare models with and without race
 model_comp <- tidy(lrtest(prison_norace, prison_sent))
 
 df$conviction_felony_flag
+
+library(sjPlot)
+
+plot_model(prison_sent, type = "pred", terms = c("age","race", "age_first_dispo"))
 ```
 
 Prison sentence length regressions
 ```{r}
+
+
 #prison sentence length regression, kitchen sink
 
 prison_length <- lm(prison_length_days ~  prior_conviction_felony_flag_count + prior_conviction_misd_flag_count  + conviction_summ_f_violent_flag + conviction_summ_f_property_flag + conviction_summ_f_drug_flag  + conviction_sex_flag + conviction_sup_vio_flag + convicted_fcharge_count + convicted_mcharge_count + max_conv_hier + cyc_age + gender  + stp_ori_cnty_name + race, data = subset(df, sent_prison_flag == 1))
@@ -2079,6 +2170,11 @@ prison_length <- lm(prison_length_days ~  prior_conviction_felony_flag_count + p
 
 #without race
 prison_length_norace <- lm(prison_length_days ~  prior_conviction_felony_flag_count + prior_conviction_misd_flag_count  + conviction_summ_f_violent_flag + conviction_summ_f_property_flag + conviction_summ_f_drug_flag  + conviction_sex_flag + conviction_sup_vio_flag + convicted_fcharge_count + convicted_mcharge_count + max_conv_hier + cyc_age + gender, data = subset(df, sent_prison_flag == 1))
+
+
+#detailed priors with categories
+prison_length <- lm(prison_length_days ~  prior_conviction_summ_f_violent_flag_count + prior_conviction_summ_f_property_flag_count +  prior_conviction_summ_f_drug_flag_count +  prior_conviction_sex_flag_count  + on_prob + + conviction_summ_f_violent_flag + conviction_summ_f_property_flag + conviction_summ_f_drug_flag + conviction_sex_flag + conviction_sup_vio_flag + convicted_fcharge_count + age + age_first_dispo + gender + race, data = subset(df, sent_prison_flag == 1 & race %in% c("Black", "White", "Hispanic", "Asian/PI")))
+
 
 summary(prison_length)
 
@@ -2090,7 +2186,7 @@ anova(prison_length, prison_length_norace)
 df %>%
   filter(cyc_date < as_date("1990-01-01"))
 
-
+plot_model(prison_length, type = "pred", terms = c("race"))
 ```
 
 Jail sentencing regressions
