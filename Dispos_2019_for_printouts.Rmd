@@ -1,6 +1,9 @@
 ---
 title: "Dispos_2019_for_printouts"
-output: pdf_document
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -28,7 +31,7 @@ library(sjPlot)
 # Load and standardize collapsed dataset
 
 Load collapsed dataset
-```{r}
+```{r echo=FALSE, message=FALSE, warning=FALSE}
 # load("G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/Dispos.RData")
 #load("G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/Dispos Feb 2021.RData")
 load("G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/Dispos Feb 17.RData")
@@ -45,7 +48,7 @@ rm(dispos)
 ```
 
 Standardize factors
-```{r}
+```{r echo=FALSE, message=FALSE, warning=FALSE}
 #Standardize factors
 df <- df %>%
  mutate(gender = as.factor(gender),
@@ -108,7 +111,7 @@ df <- df %>%
 # Descriptives
 
 Numbers for Figure 1 flow chart
-```{r}
+```{r warning=FALSE}
 df %>%
   count(court_disp) %>%
   mutate(percent = n/sum(n)) #final court dispositions vs law enforcement/prosecution release dispositions
@@ -132,7 +135,7 @@ df %>%
 ```
 
 Demographics of felony defendants (court disposition)
-```{r}
+```{r message=FALSE, warning=FALSE}
 df %>%
   filter(court_disp ==1) %>%
   count(age_cat) %>%
@@ -148,10 +151,33 @@ df %>%
   count(race) %>%
   mutate(percent = round(n/sum(n)*100, 1)) #race distribution
 
+aggregate(age ~ race, data = df %>% filter(court_disp ==1), FUN = mean)
+
+df %>%
+  filter(court_disp ==1) %>%
+  group_by(race, age_cat) %>%
+  summarise(n = n()) %>%
+  group_by(race) %>%
+  mutate(percent = round(n/sum(n)*100, 1)) %>%
+  ungroup() %>%
+  select(-n) %>%
+  pivot_wider(names_from = age_cat, values_from = percent) %>%
+  select(race, 'Under 18', '18-19 yrs', '20-29 yrs', '30-39 yrs', '40-49 yrs', '50-59 yrs', '60+ yrs')
+ 
+
+#the citizen flag must be horribly inaccurate, only capturing a very small percentage of individuals
+df %>%
+  filter(court_disp ==1) %>%
+  group_by(race, citizen) %>%
+  summarise(n = n()) %>%
+  group_by(race) %>%
+  mutate(percent = round(n/sum(n)*100, 1)) %>%
+  filter(citizen ==1)
+
 ```
 
 Prior record of felony defendants (court disposition)
-```{r}
+```{r message=FALSE, warning=FALSE}
 df %>%
   filter(court_disp ==1) %>%
   count(prior_sent_prison_flag_count >0) %>%
@@ -215,12 +241,14 @@ df %>%
   mutate(percent = round(n/sum(n)*100, 1))
 
 
+# mean days prior prison, for those who have had prior prison
 df %>%
   filter(prior_sent_prison_flag_count >0) %>%
   summarise(mean(days_prior_prison, na.rm = T)) #mean prior prison time is nearly 8 years, ouch.
   # count(is.na(days_prior_prison)) %>%
   # mutate(percent = round(n/sum(n)*100, 1))
 
+#mean days prior jail, for those who have had prior jail
 df %>%
   filter(prior_sent_jail_flag_count >0) %>%
   summarise(mean(days_prior_jail, na.rm = T)) # mean prior jail time is a little less than 2 years.
@@ -231,7 +259,7 @@ df %>%
 ```
 
 Arrest offense type for felony defendants (court dispo)
-```{r}
+```{r message=FALSE, warning=FALSE}
 
 df %>%
   filter(court_disp ==1) %>%
@@ -239,36 +267,11 @@ df %>%
   mutate(percent = round(n/sum(n)*100, 1)) #arrest offense type for felony arrest offenses only
 
 
-# df %>%
-#   filter(court_disp ==1) %>%
-#   count(arrest_summ_f_violent_flag, arrest_summ_f_property_flag, arrest_summ_f_drug_flag, arrest_summ_f_other_sex_flag, arrest_summ_f_other_flag) %>%
-#   mutate(percent = round(n/sum(n)*100, 1)) %>%
-#   arrange(desc(n))
-# 
-# df %>%
-#   filter(court_disp ==1) %>%
-#   mutate(arrest_offense_type = case_when(arrest_summ_f_violent_flag ==1 ~ "Violent",
-#                                          arrest_summ_f_property_flag == 1 ~ "Property",
-#                                          arrest_summ_f_drug_flag == 1 ~ "Drug",
-#                                          T ~ "Other")) %>%
-#   count(arrest_offense_type) %>%
-#   mutate(percent = round(n/sum(n)*100, 1)) #arrest offense type for felony arrest offenses only. prioritizing violent, then property, then drug, then other (could also show other sex, but percent is low, 1.8%, so lumped in with other)
-# 
-# 
-# df %>%
-#   filter(court_disp ==1) %>%
-#   mutate(arrest_offense_type = case_when(arrest_summ_f_violent_flag ==1 | arrest_summ_m_violent_flag ~ "Violent",
-#                                          arrest_summ_f_property_flag == 1 | arrest_summ_m_property_flag ~ "Property",
-#                                          arrest_summ_f_drug_flag == 1 | arrest_summ_m_drug_flag ~ "Drug",
-#                                          T ~ "Other")) %>%
-#   count(arrest_offense_type) %>%
-#   mutate(percent = round(n/sum(n)*100, 1)) #arrest offense type for all arrest offenses, including misdo charges. prioritizing violent (felony or misdo), then property (felony or misdo), then drug (felony or misdo), then other
-
 
 ```
 
 Descriptive info on sentences
-```{r}
+```{r message=FALSE, warning=FALSE}
 df %>%
   filter(sent_prison_flag ==1) %>%
   summarise(mean(prison_length_days, na.rm = T)) #mean prison sentence term is 2039 days (5.6 years)
@@ -279,17 +282,14 @@ df %>%
 
 df %>%
   filter(sent_probation_flag == 1) %>%
-  count(probation_length_days)
+  #count(probation_length_days)
   summarise(mean(probation_length_days, na.rm = T)) #mean probation sentence term is 1242 days (3.4 years). this might be thrown off by suspended sentences that lack probation length (many of these are zeros), and some wonky extremely large term lengths (there is one over 100,000 days = 273 years.... seems excessive)
 
 
 ```
 
-Descriptive info on offenses and priors by race and age category
-```{r}
-aggregate(age ~ race, data = df, FUN = mean)
-
-aggregate(age_cat ~ race, data = df, count)
+Descriptive info on priors by race and age category
+```{r message=FALSE, warning=FALSE}
 
 #priors by race
 df %>%
@@ -310,7 +310,7 @@ df %>%
          prior_m_prop = if_else(prior_conviction_summ_m_property_flag_count > 0, 1, 0)) %>%
   group_by(race) %>%
   summarise(across(c(prior_f_violent, prior_m_violent, prior_f_drug, prior_m_drug, prior_f_prop, prior_m_prop), mean))
-  summarise(mean(prior_f_violent), mean(prior_m_violent), mean(prior_f_drug), mean(prior_m_drug), mean(prior_f_prop), mean(prior_m_prop))
+  #summarise(mean(prior_f_violent), mean(prior_m_violent), mean(prior_f_drug), mean(prior_m_drug), mean(prior_f_prop), mean(prior_m_prop))
 
   
 df %>%
@@ -348,16 +348,24 @@ df %>%
 ```
 
 Arrest offense categories and counts by race
-```{r}
+```{r message=FALSE, warning=FALSE}
 #arrest offense type by race
 df %>%
   filter(court_disp == 1) %>%
+  select(-contains("prior")) %>%
   group_by(race) %>%
-  summarise(across(contains("arrest_summ"), -contains("prior"), ~mean(.x>0)))
+  summarise(across(contains("arrest_summ"),  ~round(mean(.x>0)*100,1)))
 
+#using categorical felony arrest offense type variable
 df %>%
-  select(contains("arrest_summ"), -contains("prior"))
-```
+  filter(court_disp == 1) %>%
+  group_by(race) %>%
+  count(arrest_f_offense_type) %>%
+  mutate(percent = round(n/sum(n)*100, 1)) %>%
+  select(-n) %>%
+  pivot_wider(names_from = arrest_f_offense_type, values_from = percent) %>%
+  select(race, Violent, Drug, Property, Other)
+
 
 #offense categories by race
 df %>%
@@ -382,111 +390,247 @@ df %>%
 ```
 
 Descriptives of outcomes for regressions
-```{r}
+```{r message=FALSE, warning=FALSE}
 #filing rate and overall conviction rate out of all arrests by race
 df %>%
   group_by(race) %>%
-  summarise(filing = mean(filed_flag), convictions_all = mean(convicted_flag))
+  summarise(filing = round(mean(filed_flag)*100,1), convictions_all = round(mean(convicted_flag)*100, 1))
 
 #conviction rate out of cases filed by race
 df %>%
   filter(filed_flag == 1) %>%
   group_by(race) %>%
-  summarise(filed_conviction = mean(convicted_flag))
+  summarise(conviction_of_filings = round(mean(convicted_flag)*100,1))
+
+#felony conviction rate out of cases filed by race
+df %>%
+  filter(convicted_flag == 1) %>%
+  group_by(race) %>%
+  summarise(felony_conv_of_conv = round(mean(conviction_felony_flag)*100,1))
+
 
 #prison sentencing rate out of convicted cases by race
 df %>%
   filter(convicted_flag == 1) %>%
   group_by(race) %>%
-  summarise(prison = mean(sent_prison_flag))
+  summarise(prison_of_convicted = round(mean(sent_prison_flag)*100,1))
+
+#prison sentencing rate out of felony convicted cases by race
+df %>%
+  filter(convicted_flag == 1, conviction_felony_flag ==1) %>%
+  group_by(race) %>%
+  summarise(prison_of_fel_convicted = round(mean(sent_prison_flag)*100,1))
 
 
 #prison sentence length out of cases sentenced to prison
 df %>%
   filter(sent_prison_flag == 1) %>%
   group_by(race) %>%
-  summarise(prison_length = mean(prison_length_days, na.rm = T), length_na = mean(is.na(prison_length_days)))
-
+  summarise(prison_length_yrs = round(mean(prison_length_days, na.rm = T)/365.25, 1), perc_length_na = round(mean(is.na(prison_length_days))*100,1))
 
 ```
 
-Tables for Appendix D
-```{r}
-ggplot(df, aes(fill=race, y= mean(convicted_flag), x=arrest_f_offense_type)) + 
-    geom_bar(position="dodge", stat="identity") +
-    scale_color_brewer(palette = "Set1") #+
-    #ggtitle("Conviction rate") +
-    #facet_wrap(~arrest_f_offense_type) +
-    #theme(legend.position="none") +
-    #xlab("")
+Charts for Appendix D -- Conviction rates
+```{r echo=FALSE, fig.height=10, fig.width=8, message=FALSE, warning=FALSE}
 
 #Conviction rate by race
 df %>%
+  filter(filed_flag == 1) %>%
   filter(race %in% c("Black", "White", "Hispanic", "Asian/PI")) %>%
   group_by(race) %>%
   summarise(mean(convicted_flag)) %>%
   rename(conviction_rate = 'mean(convicted_flag)') %>%
+  mutate(conviction_rate = conviction_rate*100) %>%
   ggplot(aes(fill=race, y= conviction_rate, x=race)) + 
     geom_bar(position="dodge", stat="identity") +
-    scale_color_brewer(palette = "Set1")
+    scale_color_brewer(palette = "Set1")+
+    geom_text(aes(label=round(conviction_rate, 0)), position=position_dodge(width=0.9), vjust=-0.25)
 
+#Conviction rate by arrest offense type and race
 df %>%
+  filter(filed_flag == 1) %>%
   filter(race %in% c("Black", "White", "Hispanic", "Asian/PI")) %>%
   filter(arrest_f_offense_type %in% c("Drug", "Property", "Violent")) %>%
   group_by(race, arrest_f_offense_type) %>%
   summarise(mean(convicted_flag)) %>%
   rename(conviction_rate = 'mean(convicted_flag)') %>%
+  mutate(conviction_rate = conviction_rate*100) %>%
   ggplot(aes(fill=race, y= conviction_rate, x=arrest_f_offense_type)) + 
+    geom_bar(position="dodge", stat="identity") +
+    scale_color_brewer(palette = "Set1")+
+    geom_text(aes(label=round(conviction_rate, 0)), position=position_dodge(width=0.9), vjust=-0.25)
+
+
+#Conviction rate by arrest offense type and race
+df %>%
+  filter(filed_flag == 1) %>%
+  mutate(prior_record_cat = case_when(prior_sent_prison_flag_count >0  ~ "Prior prison",
+                                      prior_sent_jail_flag_count >0  ~ "Prior jail, no prior prison",
+                                      prior_convicted_flag_count >0 ~ "Prior conviction with no prior incarceration",
+                                      T ~ "No prior convictions")) %>%
+  filter(race %in% c("Black", "White", "Hispanic", "Asian/PI")) %>%
+  filter(arrest_f_offense_type %in% c("Drug", "Property", "Violent")) %>%
+  group_by(race, prior_record_cat, arrest_f_offense_type) %>%
+  summarise(mean(convicted_flag)) %>%
+  rename(conviction_rate = 'mean(convicted_flag)') %>%
+  mutate(conviction_rate = conviction_rate*100) %>%
+  ggplot(aes(fill=race, y= conviction_rate, x= prior_record_cat)) + 
+    facet_wrap(vars(arrest_f_offense_type)) +
+    geom_bar(position="dodge", stat="identity") +
+    scale_color_brewer(palette = "Set1") +
+    theme(axis.text.x = element_text(angle = 90))+
+    geom_text(aes(label=round(conviction_rate, 0)), position=position_dodge(width=0.9), vjust=-0.25)
+```
+
+Charts for Appendix D -- Felony conviction rates
+```{r echo=FALSE, fig.height=10, fig.width=8,message=FALSE, warning=FALSE}
+
+#Felony conviction rate by race
+df %>%
+  filter(convicted_flag == 1) %>%
+  filter(race %in% c("Black", "White", "Hispanic", "Asian/PI")) %>%
+  group_by(race) %>%
+  summarise(mean(conviction_felony_flag)) %>%
+  rename(felony_conviction_rate = 'mean(conviction_felony_flag)') %>%
+  mutate(felony_conviction_rate = felony_conviction_rate*100) %>%
+  ggplot(aes(fill=race, y= felony_conviction_rate, x=race)) + 
+    geom_bar(position="dodge", stat="identity") +
+    scale_color_brewer(palette = "Set1")+
+    geom_text(aes(label=round(felony_conviction_rate, 0)), position=position_dodge(width=0.9), vjust=-0.25)
+
+#Felony conviction rate by arrest offense type and race
+df %>%
+  filter(convicted_flag == 1) %>%
+  filter(race %in% c("Black", "White", "Hispanic", "Asian/PI")) %>%
+  filter(arrest_f_offense_type %in% c("Drug", "Property", "Violent")) %>%
+  group_by(race, arrest_f_offense_type) %>%
+  summarise(mean(conviction_felony_flag)) %>%
+  rename(felony_conviction_rate = 'mean(conviction_felony_flag)') %>%
+  mutate(felony_conviction_rate = felony_conviction_rate*100) %>%
+  ggplot(aes(fill=race, y= felony_conviction_rate, x=arrest_f_offense_type)) + 
+    geom_bar(position="dodge", stat="identity") +
+    scale_color_brewer(palette = "Set1")+
+    geom_text(aes(label=round(felony_conviction_rate, 0)), position=position_dodge(width=0.9), vjust=-0.25)
+
+
+#Felony conviction rate by arrest offense type and race
+df %>%
+  filter(convicted_flag == 1) %>%
+  mutate(prior_record_cat = case_when(prior_sent_prison_flag_count >0  ~ "Prior prison",
+                                      prior_sent_jail_flag_count >0  ~ "Prior jail, no prior prison",
+                                      prior_convicted_flag_count >0 ~ "Prior conviction with no prior incarceration",
+                                      T ~ "No prior convictions")) %>%
+  filter(race %in% c("Black", "White", "Hispanic", "Asian/PI")) %>%
+  filter(arrest_f_offense_type %in% c("Drug", "Property", "Violent")) %>%
+  group_by(race, prior_record_cat, arrest_f_offense_type) %>%
+  summarise(mean(conviction_felony_flag)) %>%
+  rename(felony_conviction_rate = 'mean(conviction_felony_flag)') %>%
+  mutate(felony_conviction_rate = felony_conviction_rate*100) %>%
+  ggplot(aes(fill=race, y= felony_conviction_rate, x= prior_record_cat)) + 
+    facet_wrap(vars(arrest_f_offense_type)) +
+    geom_bar(position="dodge", stat="identity") +
+    scale_color_brewer(palette = "Set1") +
+    theme(axis.text.x = element_text(angle = 90)) +
+    geom_text(aes(label=round(felony_conviction_rate, 0)), position=position_dodge(width=0.9), vjust=-0.25)
+```
+
+Charts for Appendix D -- Prison sentencing rates
+```{r echo=FALSE, fig.height=10, fig.width=8,message=FALSE, warning=FALSE}
+
+#Prison sentencing rate of the felony convicted by race
+df %>%
+  filter(conviction_felony_flag == 1) %>%
+  filter(race %in% c("Black", "White", "Hispanic", "Asian/PI")) %>%
+  group_by(race) %>%
+  summarise(mean(sent_prison_flag)) %>%
+  rename(prison_sent_rate = 'mean(sent_prison_flag)') %>%
+  ggplot(aes(fill=race, y= prison_sent_rate, x=race)) + 
     geom_bar(position="dodge", stat="identity") +
     scale_color_brewer(palette = "Set1")
 
+#Prison sentencing rate of the felony convicted by arrest offense type and race
+df %>%
+  filter(conviction_felony_flag == 1) %>%
+  filter(race %in% c("Black", "White", "Hispanic", "Asian/PI")) %>%
+  filter(arrest_f_offense_type %in% c("Drug", "Property", "Violent")) %>%
+  group_by(race, arrest_f_offense_type) %>%
+  summarise(mean(sent_prison_flag)) %>%
+  rename(prison_sent_rate = 'mean(sent_prison_flag)') %>%
+  ggplot(aes(fill=race, y= prison_sent_rate, x=arrest_f_offense_type)) + 
+    geom_bar(position="dodge", stat="identity") +
+    scale_color_brewer(palette = "Set1")
+
+
+#Prison sentencing rate of the felony convicted by arrest offense type and race
+df %>%
+  filter(conviction_felony_flag == 1) %>%
+  mutate(prior_record_cat = case_when(prior_sent_prison_flag_count >0  ~ "Prior prison",
+                                      prior_sent_jail_flag_count >0  ~ "Prior jail, no prior prison",
+                                      prior_convicted_flag_count >0 ~ "Prior conviction with no prior incarceration",
+                                      T ~ "No prior convictions")) %>%
+  filter(race %in% c("Black", "White", "Hispanic", "Asian/PI")) %>%
+  filter(arrest_f_offense_type %in% c("Drug", "Property", "Violent")) %>%
+  group_by(race, prior_record_cat, arrest_f_offense_type) %>%
+  summarise(mean(sent_prison_flag)) %>%
+  rename(prison_sent_rate = 'mean(sent_prison_flag)') %>%
+  mutate(prison_sent_rate = prison_sent_rate*100) %>%
+  ggplot(aes(fill=race, y= prison_sent_rate, x= prior_record_cat)) + 
+    facet_wrap(vars(arrest_f_offense_type)) +
+    geom_bar(position="dodge", stat="identity") +
+    scale_color_brewer(palette = "Set1") +
+    theme(axis.text.x = element_text(angle = 90)) +
+    geom_text(aes(label=round(prison_sent_rate, 0)), position=position_dodge(width=0.9), vjust=-0.25)
+
+
 ```
+
+
 
 # Function Creation
 Create function to get McFadden Pseudo R2 values for each variable in a regression
-```{r}
+```{r echo=FALSE, message=FALSE, warning=FALSE}
 
-mcfaddenpr2 <- function(d, dv, ivs){
-  df <- d
-  test_df <- lapply(c(1:nrow(ivs)), function(i){
-    test <- ivs %>%
-      slice(-i) %>%
-      mutate(missing = ivs$variable[i])
-    return(test)
-  }) %>% bind_rows %>%
-    bind_rows(ivs %>% mutate(missing = "full"))
-  
-  eqn_test <- lapply(c(1:length(unique(test_df$missing))), function(i){
-    vars <- unique(test_df$missing)
-    missing_var <- vars[i]
-    test <- test_df %>%
-      filter(missing == missing_var) %>%
-      select(variable)
-    
-    str_lst <- ""
-    for(i in c(1:nrow(test))){
-      
-      str_lst <- if_else(str_lst == "", paste0(test$variable[i]), paste0(str_lst, " + ", test$variable[i]))
-      }
-    
-    fun_str <- paste0("glm(", dv, " ~ ", str_lst, ", data = df, family = 'poisson')")
-    
-
-    test_mod <- eval(parse(text = fun_str))
-    test_pr2 <- as.tibble(pR2(test_mod)[4])%>%
-              mutate(model = missing_var)
-    return(test_pr2)
-  }) %>%
-    bind_rows() %>%
-    mutate(difference = value[model == "full"] - value)
-  return(eqn_test)
-}
+# mcfaddenpr2 <- function(d, dv, ivs){
+#   df <- d
+#   test_df <- lapply(c(1:nrow(ivs)), function(i){
+#     test <- ivs %>%
+#       slice(-i) %>%
+#       mutate(missing = ivs$variable[i])
+#     return(test)
+#   }) %>% bind_rows %>%
+#     bind_rows(ivs %>% mutate(missing = "full"))
+#   
+#   eqn_test <- lapply(c(1:length(unique(test_df$missing))), function(i){
+#     vars <- unique(test_df$missing)
+#     missing_var <- vars[i]
+#     test <- test_df %>%
+#       filter(missing == missing_var) %>%
+#       select(variable)
+#     
+#     str_lst <- ""
+#     for(i in c(1:nrow(test))){
+#       
+#       str_lst <- if_else(str_lst == "", paste0(test$variable[i]), paste0(str_lst, " + ", test$variable[i]))
+#       }
+#     
+#     fun_str <- paste0("glm(", dv, " ~ ", str_lst, ", data = df, family = 'poisson')")
+#     
+# 
+#     test_mod <- eval(parse(text = fun_str))
+#     test_pr2 <- as.tibble(pR2(test_mod)[4])%>%
+#               mutate(model = missing_var)
+#     return(test_pr2)
+#   }) %>%
+#     bind_rows() %>%
+#     mutate(difference = value[model == "full"] - value)
+#   return(eqn_test)
+# }
 ```
 
 # Regressions
 
 Set desired base levels for regressions
-```{r}
+```{r message=FALSE, warning=FALSE}
 df$race <- relevel(df$race, ref="White")
 df$gender <- relevel(df$gender, ref="M")
 df$arrest_f_offense_type <- as.factor(df$arrest_f_offense_type)
@@ -497,7 +641,7 @@ df$county <- relevel(df$county, ref ="LOS ANGELES")
 
 
 Conviction regressions
-```{r}
+```{r message=FALSE, warning=FALSE}
 
 #temporarily remove hierarchy bc needs to be fixed in collapse -- replace after re-collapse
 convic <- glm(convicted_flag ~  days_prior_prison + days_prior_jail + 
@@ -530,7 +674,7 @@ conv
 ```
 
 Felony conviction regressions
-```{r}
+```{r message=FALSE, warning=FALSE}
 #conviction regression, kitchen sink
 conv_fel <- glm(conviction_felony_flag ~  days_prior_prison + days_prior_jail + 
                 prior_conviction_summ_f_violent_flag_count + prior_conviction_summ_m_violent_flag_count + 
@@ -559,10 +703,12 @@ felcon <- tidy(coeftest(conv_fel, vcov. = sandwich)) %>%
 
 felcon
 
+
+
 ```
 
 Prison sentencing regressions
-```{r}
+```{r message=FALSE, warning=FALSE}
 
 #detailing priors by type
 prison_sent <- glm(sent_prison_flag ~  days_prior_prison + days_prior_jail + 
@@ -597,57 +743,63 @@ pris_sent <- tidy(coeftest(prison_sent, vcov. = sandwich)) %>%
 pris_sent
 
  # likelihood ratio test to compare models with and without race
-model_comp <- tidy(lrtest(prison_norace, prison_sent))
+#model_comp <- tidy(lrtest(prison_norace, prison_sent))
 
 
-plot_model(prison_sent, type = "pred", terms = c("race", "gender")) 
+#plot_model(prison_sent, type = "pred", terms = c("race", "gender")) 
 
 
 ```
 
 Prison sentence length regressions
-```{r}
-#detailed priors with categories
-prison_length <- lm(prison_length_days ~  prior_conviction_summ_f_violent_flag_count + prior_conviction_summ_f_property_flag_count +  prior_conviction_summ_f_drug_flag_count +  prior_conviction_sex_flag_count  + on_prob + + conviction_summ_f_violent_flag + conviction_summ_f_property_flag + conviction_summ_f_drug_flag + conviction_sex_flag + conviction_sup_vio_flag + convicted_fcharge_count + age + age_first_dispo + gender + race, data = subset(df, sent_prison_flag == 1 & race %in% c("Black", "White", "Hispanic", "Asian/PI")))
+```{r message=FALSE, warning=FALSE}
 
-
-prison_length <- lm(prison_length_days ~  days_prior_prison + prior_conviction_summ_f_violent_flag_count + prior_conviction_summ_f_property_flag_count +  prior_conviction_summ_f_drug_flag_count + prior_conviction_summ_m_violent_flag_count + prior_conviction_summ_m_property_flag_count +  prior_conviction_summ_m_drug_flag_count +  prior_conviction_sex_flag_count  + prior_conviction_sup_vio_flag_count + on_prob + + conviction_summ_f_violent_flag + conviction_summ_f_property_flag + conviction_summ_f_drug_flag + conviction_sex_flag  + conviction_sup_vio_flag + convicted_fcharge_count + age  + days_since_last_conv:prior_dummy + gender + race + county + citizen, data =  df %>%
-  filter(sent_prison_flag == 1, race %in% c("Black", "White", "Hispanic", "Asian/PI")) %>%
-  mutate(prior_dummy = if_else(prior_convicted_flag_count >0, 1, 0)))
+prison_length <- lm(prison_length_days ~  days_prior_prison + days_prior_jail +
+                      prior_conviction_summ_f_violent_flag_count + prior_conviction_summ_f_property_flag_count +  
+                      prior_conviction_summ_f_drug_flag_count + prior_conviction_summ_m_violent_flag_count + 
+                      prior_conviction_summ_m_property_flag_count +  prior_conviction_summ_m_drug_flag_count +  
+                      prior_conviction_sex_flag_count  + prior_conviction_dv_flag_count + on_prob + 
+                      days_since_last_conv:prior_dummy +
+                      conviction_summ_f_violent_flag + conviction_summ_m_violent_flag +
+                      conviction_summ_f_property_flag + conviction_summ_m_property_flag +
+                      conviction_summ_f_drug_flag + conviction_summ_m_drug_flag + 
+                      conviction_sex_flag  + conviction_dv_flag + 
+                      convicted_fcharge_count + convicted_mcharge_count + 
+                      age  + gender + race + citizen +
+                      county, 
+                    data =  df %>%
+                      filter(sent_prison_flag == 1, 
+                             race %in% c("Black", "White", "Hispanic", "Asian/PI")) %>%
+                      mutate(prior_dummy = if_else(prior_convicted_flag_count >0, 1, 0)))
 
 summary(prison_length)
 
-lrtest(prison_length, prison_length_norace)
-anova(prison_length, prison_length_norace)
+#lrtest(prison_length, prison_length_norace)
+#anova(prison_length, prison_length_norace)
 #what is the difference between lrtest and anova? which is appropriate to use here?
 
-#some weird very old cycle dates
-df %>%
-  filter(cyc_date < as_date("1990-01-01"))
 
-plot_model(prison_length, type = "pred", terms = c("race"))
+# plot_model(prison_length, type = "pred", terms = c("race"))
 
-df$prior_sent_prison_flag_count
-df$days_prior_prison
 ```
 
 Variable tracking
-```{r}
-names(df %>%
-  select(contains("prior")))
-
-#relevant variables to control for criminal history
-prior_vars <- c("prior_conviction_restrain_flag_count", "prior_conviction_dv_possible_flag_count",  
-                "prior_conviction_summ_f_violent_flag_count", "prior_conviction_summ_f_property_flag_count", 
-                "prior_conviction_summ_f_drug_flag_count","prior_conviction_summ_f_other_sex_flag_count",
-                "prior_conviction_summ_f_other_flag_count","prior_conviction_summ_m_violent_flag_count",
-                "prior_conviction_summ_m_property_flag_count", "prior_conviction_summ_m_drug_flag_count",
-                "prior_conviction_summ_m_other_sex_flag_count", "prior_conviction_summ_m_other_flag_count",
-                "days_prior_prison", "days_prior_jail", "prior_max_conv_hier_scaled") 
-
-
-names(df %>%
-  select(contains("conviction")))
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# names(df %>%
+#   select(contains("prior")))
+# 
+# #relevant variables to control for criminal history
+# prior_vars <- c("prior_conviction_restrain_flag_count", "prior_conviction_dv_possible_flag_count",  
+#                 "prior_conviction_summ_f_violent_flag_count", "prior_conviction_summ_f_property_flag_count", 
+#                 "prior_conviction_summ_f_drug_flag_count","prior_conviction_summ_f_other_sex_flag_count",
+#                 "prior_conviction_summ_f_other_flag_count","prior_conviction_summ_m_violent_flag_count",
+#                 "prior_conviction_summ_m_property_flag_count", "prior_conviction_summ_m_drug_flag_count",
+#                 "prior_conviction_summ_m_other_sex_flag_count", "prior_conviction_summ_m_other_flag_count",
+#                 "days_prior_prison", "days_prior_jail", "prior_max_conv_hier_scaled") 
+# 
+# 
+# names(df %>%
+#   select(contains("conviction")))
 ```
 
 
