@@ -28,6 +28,7 @@ library(broom) # to get stuff out of the objects lmtest produces
 #library(blorr) #for pseudo R2 and other analytics
 library(pscl) #package for pseudo R2 (pR2 function)
 library(RColorBrewer)
+library(sjPlot)
 
 ```
 
@@ -2138,7 +2139,18 @@ prison_norace <- glm(sent_prison_flag ~  prior_conviction_felony_flag_count + pr
 prison_sent <- glm(sent_prison_flag ~  prior_conviction_summ_f_violent_flag_count + prior_conviction_summ_m_violent_flag_count + prior_conviction_summ_f_property_flag_count + prior_conviction_summ_m_property_flag_count + prior_conviction_summ_f_drug_flag_count + prior_conviction_summ_m_drug_flag_count + prior_conviction_sex_flag_count + on_prob + + conviction_summ_f_violent_flag + conviction_summ_f_property_flag + conviction_summ_f_drug_flag + conviction_sex_flag + conviction_sup_vio_flag + convicted_fcharge_count + convicted_mcharge_count  + age + gender + race, data = subset(df, convicted_flag == 1 & conviction_felony_flag == 1), family = 'poisson')
 
 #not counting misdos (priors or current)
-prison_sent <- glm(sent_prison_flag ~  prior_conviction_summ_f_violent_flag_count + prior_conviction_summ_f_property_flag_count +  prior_conviction_summ_f_drug_flag_count +  prior_conviction_sex_flag_count  + on_prob + + conviction_summ_f_violent_flag + conviction_summ_f_property_flag + conviction_summ_f_drug_flag + conviction_sex_flag + conviction_sup_vio_flag + convicted_fcharge_count + scale(age, scale = F)*scale(age_first_dispo, scale = F)*race + gender , data = subset(df, convicted_flag == 1 & conviction_felony_flag == 1 & race %in% c("Black", "White", "Hispanic", "Asian/PI")), family = 'poisson')
+prison_sent <- glm(sent_prison_flag ~  prior_conviction_summ_f_violent_flag_count + prior_conviction_summ_f_property_flag_count +  prior_conviction_summ_f_drug_flag_count +  prior_conviction_sex_flag_count  + on_prob + + conviction_summ_f_violent_flag + conviction_summ_f_property_flag + conviction_summ_f_drug_flag + conviction_sex_flag  + convicted_fcharge_count + scale(age, scale = F)*scale(age_first_dispo, scale = F) + gender + race, data = subset(df, convicted_flag == 1 & conviction_felony_flag == 1 & race %in% c("Black", "White", "Hispanic", "Asian/PI")), family = 'poisson')
+
+
+prison_sent <- glm(sent_prison_flag ~  prior_conviction_summ_f_violent_flag_count + prior_conviction_summ_f_property_flag_count +  prior_conviction_summ_f_drug_flag_count +  prior_conviction_sex_flag_count  + on_prob + + conviction_summ_f_violent_flag + conviction_summ_f_property_flag + conviction_summ_f_drug_flag + conviction_sex_flag  + convicted_fcharge_count + age + days_since_last_conv:prior_dummy + gender + race, data =  df %>%
+  filter(convicted_flag ==1, conviction_felony_flag == 1, race %in% c("Black", "White", "Hispanic", "Asian/PI")) %>%
+  mutate(prior_dummy = if_else(prior_convicted_flag_count >0, 1, 0)),
+      family = 'poisson')
+
+prison_sent <- glm(sent_prison_flag ~  prior_conviction_summ_f_violent_flag_count + prior_conviction_summ_f_property_flag_count +  prior_conviction_summ_f_drug_flag_count +  prior_conviction_sex_flag_count  + prior_conviction_sup_vio_flag_count + on_prob + + conviction_summ_f_violent_flag + conviction_summ_f_property_flag + conviction_summ_f_drug_flag + conviction_sex_flag  + conviction_sup_vio_flag + convicted_fcharge_count + age*age_first_dispo + days_since_last_conv:prior_dummy + gender*race, data =  df %>%
+  filter(convicted_flag ==1, conviction_felony_flag == 1, race %in% c("Black", "White", "Hispanic", "Asian/PI")) %>%
+  mutate(prior_dummy = if_else(prior_convicted_flag_count >0, 1, 0)),
+      family = 'poisson')
 
 #summary(prison_county)
 
@@ -2152,9 +2164,17 @@ model_comp <- tidy(lrtest(prison_norace, prison_sent))
 
 df$conviction_felony_flag
 
-library(sjPlot)
 
-plot_model(prison_sent, type = "pred", terms = c("age","race", "age_first_dispo"))
+
+plot_model(prison_sent, type = "pred", terms = c("race", "gender")) 
+
+summary(df$days_since_last_conv)
+
+df %>%
+  select(days_since_last_conv, prior_convicted_flag_count) %>%
+  filter(days_since_last_conv > 20000, prior_convicted_flag_count >0)
+
+df$prior_
 ```
 
 Prison sentence length regressions
@@ -2176,6 +2196,10 @@ prison_length_norace <- lm(prison_length_days ~  prior_conviction_felony_flag_co
 prison_length <- lm(prison_length_days ~  prior_conviction_summ_f_violent_flag_count + prior_conviction_summ_f_property_flag_count +  prior_conviction_summ_f_drug_flag_count +  prior_conviction_sex_flag_count  + on_prob + + conviction_summ_f_violent_flag + conviction_summ_f_property_flag + conviction_summ_f_drug_flag + conviction_sex_flag + conviction_sup_vio_flag + convicted_fcharge_count + age + age_first_dispo + gender + race, data = subset(df, sent_prison_flag == 1 & race %in% c("Black", "White", "Hispanic", "Asian/PI")))
 
 
+prison_length <- lm(prison_length_days ~  days_prior_prison + prior_conviction_summ_f_violent_flag_count + prior_conviction_summ_f_property_flag_count +  prior_conviction_summ_f_drug_flag_count + prior_conviction_summ_m_violent_flag_count + prior_conviction_summ_m_property_flag_count +  prior_conviction_summ_m_drug_flag_count +  prior_conviction_sex_flag_count  + prior_conviction_sup_vio_flag_count + on_prob + + conviction_summ_f_violent_flag + conviction_summ_f_property_flag + conviction_summ_f_drug_flag + conviction_sex_flag  + conviction_sup_vio_flag + convicted_fcharge_count + age  + days_since_last_conv:prior_dummy + gender + race + county, data =  df %>%
+  filter(sent_prison_flag == 1, race %in% c("Black", "White", "Hispanic", "Asian/PI")) %>%
+  mutate(prior_dummy = if_else(prior_convicted_flag_count >0, 1, 0)))
+
 summary(prison_length)
 
 lrtest(prison_length, prison_length_norace)
@@ -2187,6 +2211,9 @@ df %>%
   filter(cyc_date < as_date("1990-01-01"))
 
 plot_model(prison_length, type = "pred", terms = c("race"))
+
+df$prior_sent_prison_flag_count
+df$days_prior_prison
 ```
 
 Jail sentencing regressions
