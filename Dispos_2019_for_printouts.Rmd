@@ -92,10 +92,11 @@ df <- df %>%
         days_since_last_conv = as.integer(dispo_date - prior_conv_date), 
          
         #create scaled variables for hierarchy, and flip to make more intuitive so that higher values mean more severe crimes
-        prior_max_conv_hier_scaled = -scale(prior_max_conv_hier),
-        max_arrest_hier_scaled = -scale(max_arrest_hier),
-        max_court_hier_scaled = -scale(max_court_hier),
-        max_conv_hier_scaled = -scale(max_conv_hier),
+        #for missing hierarchy values (represented by 1000000), set scaled value to 0
+        prior_max_conv_hier_scaled = if_else(prior_max_conv_hier == 1000000, 0, -scale(prior_max_conv_hier)),
+        max_arrest_hier_scaled = if_else(max_arrest_hier == 1000000, 0, -scale(max_arrest_hier)),
+        max_court_hier_scaled = if_else(max_court_hier == 1000000, 0, -scale(max_court_hier)),
+        max_conv_hier_scaled = if_else(max_conv_hier == 1000000, 0, -scale(max_conv_hier)),
         
         
         #create a dummy variable to indicate whether defendant has any priors, to use as an interaction term with days since last conviction
@@ -105,9 +106,26 @@ df <- df %>%
         prior_record_cat = case_when(prior_sent_prison_flag_count >0  ~ "Prior prison",
                                       prior_sent_jail_flag_count >0  ~ "Prior jail with no prior prison",
                                       prior_convicted_flag_count >0 ~ "Prior conviction with no prior incarceration",
-                                      T ~ "No prior convictions")
+                                      T ~ "No prior convictions"),
+        
+        #create inverted variable with ceiling of years since prior conviction
+        inv_yrs_since_prior_conv = if_else(prior_convicted_flag_count >0, 1/ceiling(days_since_last_conv/365.25), 0),
+        
+        #create years of prior prison and jail for ease of interpretability
+        years_prior_prison = days_prior_prison/365.25,
+        years_prior_jail = days_prior_jail/365.25
         
         )
+
+
+#set base levels for regressions
+df$race <- relevel(df$race, ref="White")
+df$gender <- relevel(df$gender, ref="M")
+df$arrest_f_offense_type <- as.factor(df$arrest_f_offense_type)
+df$arrest_f_offense_type <- relevel(df$arrest_f_offense_type, ref="Property")
+df$county <- as.factor(df$county)
+df$county <- relevel(df$county, ref ="LOS ANGELES")
+
 
 ```
 
@@ -447,6 +465,8 @@ df %>%
     scale_color_brewer(palette = "Set1")+
     geom_text(aes(label=round(conviction_of_filings, 0)), position=position_dodge(width=0.9), vjust=-0.25)
 
+ggsave("conviction rate by race.png", path = "G:/CrimJustice/Dispositions by Race and Ethnicity/Figures 2019")
+
 #felony conviction rate out of cases filed by race
 df %>%
   filter(convicted_flag == 1,
@@ -458,6 +478,8 @@ df %>%
     geom_bar(position="dodge", stat="identity") +
     scale_color_brewer(palette = "Set1")+
     geom_text(aes(label=round(felony_conv_of_conv, 0)), position=position_dodge(width=0.9), vjust=-0.25)
+
+ggsave("felony conviction rate by race.png", path = "G:/CrimJustice/Dispositions by Race and Ethnicity/Figures 2019")
 
 
 #prison sentencing rate out of felony convicted cases by race
@@ -472,6 +494,7 @@ df %>%
     scale_color_brewer(palette = "Set1")+
     geom_text(aes(label=round(prison_of_fel_convicted, 0)), position=position_dodge(width=0.9), vjust=-0.25)
 
+ggsave("prison sentencing rate by race.png", path = "G:/CrimJustice/Dispositions by Race and Ethnicity/Figures 2019")
 
 
 #prison sentence length out of cases sentenced to prison
@@ -485,6 +508,8 @@ df %>%
     geom_bar(position="dodge", stat="identity") +
     scale_color_brewer(palette = "Set1")+
     geom_text(aes(label=round(prison_length_yrs, 1)), position=position_dodge(width=0.9), vjust=-0.25)
+
+ggsave("prison sentence length by race.png", path = "G:/CrimJustice/Dispositions by Race and Ethnicity/Figures 2019")
 
 
 ```
@@ -501,7 +526,10 @@ df %>%
   ggplot(aes(fill=prior_record_cat, y= conviction_of_filings, x=prior_record_cat)) + 
     geom_bar(position="dodge", stat="identity") +
     scale_color_brewer(palette = "Set1")+
+    theme(axis.text.x=element_blank()) +
     geom_text(aes(label=round(conviction_of_filings, 0)), position=position_dodge(width=0.9), vjust=-0.25)
+
+ggsave("conviction rate by prior record.png", path = "G:/CrimJustice/Dispositions by Race and Ethnicity/Figures 2019")
 
 #felony conviction rate out of cases filed by prior_record_cat
 df %>%
@@ -513,8 +541,10 @@ df %>%
   ggplot(aes(fill=prior_record_cat, y= felony_conv_of_conv, x=prior_record_cat)) + 
     geom_bar(position="dodge", stat="identity") +
     scale_color_brewer(palette = "Set1")+
+    theme(axis.text.x=element_blank()) +
     geom_text(aes(label=round(felony_conv_of_conv, 0)), position=position_dodge(width=0.9), vjust=-0.25)
 
+ggsave("felony conviction rate by prior record.png", path = "G:/CrimJustice/Dispositions by Race and Ethnicity/Figures 2019")
 
 #prison sentencing rate out of felony convicted cases by prior_record_cat
 df %>%
@@ -526,9 +556,10 @@ df %>%
   ggplot(aes(fill=prior_record_cat, y= prison_of_fel_convicted, x=prior_record_cat)) + 
     geom_bar(position="dodge", stat="identity") +
     scale_color_brewer(palette = "Set1")+
+    theme(axis.text.x=element_blank()) +
     geom_text(aes(label=round(prison_of_fel_convicted, 0)), position=position_dodge(width=0.9), vjust=-0.25)
 
-
+ggsave("prison sentencing rate by prior record.png", path = "G:/CrimJustice/Dispositions by Race and Ethnicity/Figures 2019")
 
 #prison sentence length out of cases sentenced to prison
 df %>%
@@ -540,7 +571,10 @@ df %>%
   ggplot(aes(fill=prior_record_cat, y= prison_length_yrs, x=prior_record_cat)) + 
     geom_bar(position="dodge", stat="identity") +
     scale_color_brewer(palette = "Set1")+
+    theme(axis.text.x=element_blank()) +
     geom_text(aes(label=round(prison_length_yrs, 1)), position=position_dodge(width=0.9), vjust=-0.25)
+
+ggsave("prison sentence length by prior record.png", path = "G:/CrimJustice/Dispositions by Race and Ethnicity/Figures 2019")
 
 
 ```
@@ -559,6 +593,9 @@ df %>%
     scale_color_brewer(palette = "Set1")+
     geom_text(aes(label=round(conviction_of_filings, 0)), position=position_dodge(width=0.9), vjust=-0.25)
 
+ggsave("conviction rate by arrest offense type.png", path = "G:/CrimJustice/Dispositions by Race and Ethnicity/Figures 2019")
+
+
 #felony conviction rate out of cases filed by arrest_f_offense_type
 df %>%
   filter(convicted_flag == 1,
@@ -570,6 +607,8 @@ df %>%
     geom_bar(position="dodge", stat="identity") +
     scale_color_brewer(palette = "Set1")+
     geom_text(aes(label=round(felony_conv_of_conv, 0)), position=position_dodge(width=0.9), vjust=-0.25)
+
+ggsave("felony conviction rate by arrest offense type.png", path = "G:/CrimJustice/Dispositions by Race and Ethnicity/Figures 2019")
 
 
 #prison sentencing rate out of felony convicted cases by arrest_f_offense_type
@@ -584,6 +623,7 @@ df %>%
     scale_color_brewer(palette = "Set1")+
     geom_text(aes(label=round(prison_of_fel_convicted, 0)), position=position_dodge(width=0.9), vjust=-0.25)
 
+ggsave("prison sentencing rate by arrest offense type.png", path = "G:/CrimJustice/Dispositions by Race and Ethnicity/Figures 2019")
 
 
 #prison sentence length out of cases sentenced to prison
@@ -598,6 +638,8 @@ df %>%
     scale_color_brewer(palette = "Set1")+
     geom_text(aes(label=round(prison_length_yrs, 1)), position=position_dodge(width=0.9), vjust=-0.25)
 
+ggsave("prison sentence length by arrest offense type.png", path = "G:/CrimJustice/Dispositions by Race and Ethnicity/Figures 2019")
+
 
 ```
 
@@ -605,53 +647,56 @@ df %>%
 Charts for Appendix D -- Conviction rates
 ```{r echo=FALSE, fig.height=10, fig.width=8, message=FALSE, warning=FALSE}
 
-#Conviction rate by race
-df %>%
-  filter(filed_flag == 1) %>%
-  filter(race %in% c("Black", "White", "Hispanic", "Asian/PI")) %>%
-  group_by(race) %>%
-  summarise(mean(convicted_flag)) %>%
-  rename(conviction_rate = 'mean(convicted_flag)') %>%
-  mutate(conviction_rate = conviction_rate*100) %>%
-  ggplot(aes(fill=race, y= conviction_rate, x=race)) + 
-    geom_bar(position="dodge", stat="identity") +
-    scale_color_brewer(palette = "Set1")+
-    geom_text(aes(label=round(conviction_rate, 0)), position=position_dodge(width=0.9), vjust=-0.25)
+# #Conviction rate by race
+# df %>%
+#   filter(filed_flag == 1) %>%
+#   filter(race %in% c("Black", "White", "Hispanic", "Asian/PI")) %>%
+#   group_by(race) %>%
+#   summarise(mean(convicted_flag)) %>%
+#   rename(conviction_rate = 'mean(convicted_flag)') %>%
+#   mutate(conviction_rate = conviction_rate*100) %>%
+#   ggplot(aes(fill=race, y= conviction_rate, x=race)) + 
+#     geom_bar(position="dodge", stat="identity") +
+#     scale_color_brewer(palette = "Set1")+
+#     geom_text(aes(label=round(conviction_rate, 0)), position=position_dodge(width=0.9), vjust=-0.25)
+# 
+# #Conviction rate by arrest offense type and race
+# df %>%
+#   filter(filed_flag == 1) %>%
+#   filter(race %in% c("Black", "White", "Hispanic", "Asian/PI")) %>%
+#   filter(arrest_f_offense_type %in% c("Drug", "Property", "Violent")) %>%
+#   group_by(race, arrest_f_offense_type) %>%
+#   summarise(mean(convicted_flag)) %>%
+#   rename(conviction_rate = 'mean(convicted_flag)') %>%
+#   mutate(conviction_rate = conviction_rate*100) %>%
+#   ggplot(aes(fill=race, y= conviction_rate, x=arrest_f_offense_type)) + 
+#     geom_bar(position="dodge", stat="identity") +
+#     scale_color_brewer(palette = "Set1")+
+#     geom_text(aes(label=round(conviction_rate, 0)), position=position_dodge(width=0.9), vjust=-0.25)
 
-#Conviction rate by arrest offense type and race
-df %>%
-  filter(filed_flag == 1) %>%
-  filter(race %in% c("Black", "White", "Hispanic", "Asian/PI")) %>%
-  filter(arrest_f_offense_type %in% c("Drug", "Property", "Violent")) %>%
-  group_by(race, arrest_f_offense_type) %>%
-  summarise(mean(convicted_flag)) %>%
-  rename(conviction_rate = 'mean(convicted_flag)') %>%
-  mutate(conviction_rate = conviction_rate*100) %>%
-  ggplot(aes(fill=race, y= conviction_rate, x=arrest_f_offense_type)) + 
-    geom_bar(position="dodge", stat="identity") +
-    scale_color_brewer(palette = "Set1")+
-    geom_text(aes(label=round(conviction_rate, 0)), position=position_dodge(width=0.9), vjust=-0.25)
 
-
-#Conviction rate by arrest offense type and race
+#Conviction rate by arrest offense type, prior record, and race
 df %>%
-  filter(filed_flag == 1) %>%
-  mutate(prior_record_cat = case_when(prior_sent_prison_flag_count >0  ~ "Prior prison",
-                                      prior_sent_jail_flag_count >0  ~ "Prior jail, no prior prison",
-                                      prior_convicted_flag_count >0 ~ "Prior conviction with no prior incarceration",
-                                      T ~ "No prior convictions")) %>%
-  filter(race %in% c("Black", "White", "Hispanic", "Asian/PI")) %>%
+  filter(filed_flag == 1,
+         race %in% c("Black", "White", "Hispanic", "Asian/PI"),
+         gender %in% c("M", "F"),
+         age >= 18) %>%
   filter(arrest_f_offense_type %in% c("Drug", "Property", "Violent")) %>%
   group_by(race, prior_record_cat, arrest_f_offense_type) %>%
   summarise(mean(convicted_flag)) %>%
   rename(conviction_rate = 'mean(convicted_flag)') %>%
   mutate(conviction_rate = conviction_rate*100) %>%
   ggplot(aes(fill=race, y= conviction_rate, x= prior_record_cat)) + 
-    facet_wrap(vars(arrest_f_offense_type)) +
-    geom_bar(position="dodge", stat="identity") +
+    facet_grid(rows = vars(arrest_f_offense_type)) +
+    geom_bar(position=position_dodge(width=0.9), stat="identity", width = 0.85) +
     scale_color_brewer(palette = "Set1") +
-    theme(axis.text.x = element_text(angle = 90))+
-    geom_text(aes(label=round(conviction_rate, 0)), position=position_dodge(width=0.9), vjust=-0.25)
+    #theme(axis.text.x = element_text(angle = 90))+
+    geom_text(aes(label=round(conviction_rate, 0)), position=position_dodge(width=0.9), vjust=-0.25) +
+    ylim(0, 100) +
+    scale_x_discrete(labels = c("No prior\n convictions", "Prior conviction\n with no prior\n incarceration", "Prior jail\n with no prior\n prison", "Prior prison"))
+
+ggsave("appendix D - conviction rate by arrest offense type, prior record, and race.png", path = "G:/CrimJustice/Dispositions by Race and Ethnicity/Figures 2019")
+
 ```
 
 Charts for Appendix D -- Felony conviction rates
@@ -904,17 +949,23 @@ nrow(df %>%
 Prison sentence length regressions
 ```{r message=FALSE, warning=FALSE}
 
-prison_length <- lm(prison_length_days ~  days_prior_prison + days_prior_jail +
+prison_length <- lm(prison_length_days ~  years_prior_prison + years_prior_jail +
                       prior_conviction_summ_f_violent_flag_count + prior_conviction_summ_f_property_flag_count +  
                       prior_conviction_summ_f_drug_flag_count + prior_conviction_summ_m_violent_flag_count + 
                       prior_conviction_summ_m_property_flag_count +  prior_conviction_summ_m_drug_flag_count +  
-                      prior_conviction_sex_flag_count  + prior_conviction_dv_flag_count + 
+                      prior_conviction_summ_f_other_sex_flag_count +  prior_conviction_summ_m_other_sex_flag_count + 
+                      prior_conviction_summ_f_other_flag_count +  prior_conviction_summ_m_other_flag_count +
+                      prior_conviction_sex_flag_count  + prior_conviction_dv_flag_count + prior_conviction_dui_flag_count +
                       on_prob + prior_max_conv_hier_scaled + 
-                      days_since_last_conv:prior_dummy +
+                      inv_yrs_since_prior_conv +
                       conviction_summ_f_violent_flag + conviction_summ_m_violent_flag +
                       conviction_summ_f_property_flag + conviction_summ_m_property_flag +
                       conviction_summ_f_drug_flag + conviction_summ_m_drug_flag + 
-                      conviction_sex_flag  + conviction_dv_flag + max_conv_hier_scaled +
+                      conviction_summ_f_other_sex_flag + conviction_summ_m_other_sex_flag + 
+                      conviction_summ_f_other_flag + conviction_summ_m_other_flag + 
+                      conviction_sex_flag  + conviction_dv_flag + conviction_dui_flag +
+                      conviction_violent_felony_flag + conviction_serious_felony_flag +
+                      max_conv_hier_scaled +
                       convicted_fcharge_count + convicted_mcharge_count + 
                       age  + gender + race + 
                       county, 
@@ -924,6 +975,17 @@ prison_length <- lm(prison_length_days ~  days_prior_prison + days_prior_jail +
                              race %in% c("Black", "White", "Hispanic", "Asian/PI")))
 
 summary(prison_length)
+tidy(coeftest(prison_length, vcov. = sandwich))
+tidy(confint(prison_length, vcov. = sandwich))
+
+df %>%
+  count(conviction_summ_f_violent_flag, conviction_violent_felony_flag, conviction_serious_felony_flag)
+
+df %>%
+  select(matches("^conviction_.*_flag"))
+
+df %>%
+  count(conviction_summ_m_other_flag)
 
 #lrtest(prison_length, prison_length_norace)
 #anova(prison_length, prison_length_norace)
@@ -931,6 +993,7 @@ summary(prison_length)
 
 
 # plot_model(prison_length, type = "pred", terms = c("race"))
+
 
 #number of observations in regression
 nrow(df %>%
@@ -1181,19 +1244,27 @@ Regression and pseudo R2 output for conviction
 conv_pr2 <- mcfaddenpr2(d = df %>%
               filter(filed_flag == 1,
                          gender %in% c("M", "F"),
-                         race %in% c("Black", "White", "Hispanic", "Asian/PI")),
+                         race %in% c("Black", "White", "Hispanic", "Asian/PI"),
+                         age >= 18),
             dv = "convicted_flag",
-            crim_hist = c("days_prior_prison", "days_prior_jail", "prior_conviction_summ_f_violent_flag_count", 
-            "prior_conviction_summ_m_violent_flag_count", 
+            crim_hist = c("years_prior_prison", "years_prior_jail", "prior_sent_probation_flag_count",
+            "prior_conviction_summ_f_violent_flag_count", "prior_conviction_summ_m_violent_flag_count", 
             "prior_conviction_summ_f_property_flag_count", "prior_conviction_summ_m_property_flag_count", 
             "prior_conviction_summ_f_drug_flag_count", "prior_conviction_summ_m_drug_flag_count", 
+            "prior_conviction_summ_f_other_sex_flag_count", "prior_conviction_summ_m_other_sex_flag_count", 
+            "prior_conviction_summ_f_other_flag_count", "prior_conviction_summ_m_other_flag_count",
+            "prior_conviction_violent_felony_flag_count", "prior_conviction_serious_felony_flag_count",
             "prior_conviction_sex_flag_count", "prior_conviction_dv_flag_count", "prior_conviction_dui_flag_count",
             "on_prob", "prior_max_conv_hier_scaled", 
-            "days_since_last_conv:prior_dummy"),
+            "inv_yrs_since_prior_conv"),
             current_crime = c("court_summ_f_violent_flag", "court_summ_m_violent_flag", "court_summ_f_property_flag", 
             "court_summ_m_property_flag", "court_summ_f_drug_flag", "court_summ_m_drug_flag", 
+            "court_summ_f_other_sex_flag", "court_summ_m_other_sex_flag", 
+            "court_summ_f_other_flag", "court_summ_m_other_flag", 
+            "court_violent_felony_flag", "court_serious_felony_flag",
             "court_sex_flag", "court_dv_flag", "court_dui_flag",
-            "max_court_hier_scaled", "filed_fcharge_count", "filed_mcharge_count"),
+            "max_court_hier_scaled", "filed_fcharge_count", "filed_mcharge_count",
+            "combined_cycles_count"),
             age = c("age"), 
             gender = c("gender"),
             location = c("county"),
@@ -1211,19 +1282,27 @@ Regression and pseudo R2 output for felony conviction
 fel_pr2 <- mcfaddenpr2(d = df %>%
               filter(convicted_flag == 1,
                          gender %in% c("M", "F"),
-                         race %in% c("Black", "White", "Hispanic", "Asian/PI")),
+                         race %in% c("Black", "White", "Hispanic", "Asian/PI"),
+                         age >= 18),
             dv = "conviction_felony_flag",
-            crim_hist = c("days_prior_prison", "days_prior_jail", "prior_conviction_summ_f_violent_flag_count", 
-            "prior_conviction_summ_m_violent_flag_count", 
+            crim_hist = c("years_prior_prison", "years_prior_jail", "prior_sent_probation_flag_count",
+            "prior_conviction_summ_f_violent_flag_count", "prior_conviction_summ_m_violent_flag_count", 
             "prior_conviction_summ_f_property_flag_count", "prior_conviction_summ_m_property_flag_count", 
             "prior_conviction_summ_f_drug_flag_count", "prior_conviction_summ_m_drug_flag_count", 
+            "prior_conviction_summ_f_other_sex_flag_count", "prior_conviction_summ_m_other_sex_flag_count", 
+            "prior_conviction_summ_f_other_flag_count", "prior_conviction_summ_m_other_flag_count",
+            "prior_conviction_violent_felony_flag_count", "prior_conviction_serious_felony_flag_count",
             "prior_conviction_sex_flag_count", "prior_conviction_dv_flag_count", "prior_conviction_dui_flag_count",
             "on_prob", "prior_max_conv_hier_scaled", 
-            "days_since_last_conv:prior_dummy"),
+            "inv_yrs_since_prior_conv"),
             current_crime = c("court_summ_f_violent_flag", "court_summ_m_violent_flag", "court_summ_f_property_flag", 
-            "court_summ_m_property_flag", "court_summ_f_drug_flag", "court_summ_m_drug_flag", 
+            "court_summ_m_property_flag", "court_summ_f_drug_flag", "court_summ_m_drug_flag",
+            "court_summ_f_other_sex_flag", "court_summ_m_other_sex_flag", 
+            "court_summ_f_other_flag", "court_summ_m_other_flag", 
+            "court_violent_felony_flag", "court_serious_felony_flag",
             "court_sex_flag", "court_dv_flag", "court_dui_flag", 
-            "max_court_hier_scaled", "filed_fcharge_count", "filed_mcharge_count"),
+            "max_court_hier_scaled", "filed_fcharge_count", "filed_mcharge_count",
+            "combined_cycles_count"),
             age = c("age"), 
             gender = c("gender"),
             location = c("county"),
@@ -1240,19 +1319,27 @@ Regression and pseudo R2 output for prison sentencing
 sent_pr2 <- mcfaddenpr2(d = df %>%
               filter(conviction_felony_flag == 1,
                          gender %in% c("M", "F"),
-                         race %in% c("Black", "White", "Hispanic", "Asian/PI")),
+                         race %in% c("Black", "White", "Hispanic", "Asian/PI"),
+                         age >= 18),
             dv = "sent_prison_flag",
-            crim_hist = c("days_prior_prison", "days_prior_jail", "prior_conviction_summ_f_violent_flag_count", 
-            "prior_conviction_summ_m_violent_flag_count", 
+            crim_hist = c("years_prior_prison", "years_prior_jail", "prior_sent_probation_flag_count",
+            "prior_conviction_summ_f_violent_flag_count", "prior_conviction_summ_m_violent_flag_count", 
             "prior_conviction_summ_f_property_flag_count", "prior_conviction_summ_m_property_flag_count", 
             "prior_conviction_summ_f_drug_flag_count", "prior_conviction_summ_m_drug_flag_count", 
+            "prior_conviction_summ_f_other_sex_flag_count", "prior_conviction_summ_m_other_sex_flag_count", 
+            "prior_conviction_summ_f_other_flag_count", "prior_conviction_summ_m_other_flag_count",
+            "prior_conviction_violent_felony_flag_count", "prior_conviction_serious_felony_flag_count",
             "prior_conviction_sex_flag_count", "prior_conviction_dv_flag_count", "prior_conviction_dui_flag_count",
             "on_prob", "prior_max_conv_hier_scaled", 
-            "days_since_last_conv:prior_dummy"),
+            "inv_yrs_since_prior_conv"),
             current_crime = c("conviction_summ_f_violent_flag", "conviction_summ_m_violent_flag", "conviction_summ_f_property_flag", 
-            "conviction_summ_m_property_flag", "conviction_summ_f_drug_flag", "conviction_summ_m_drug_flag", 
+            "conviction_summ_m_property_flag", "conviction_summ_f_drug_flag", "conviction_summ_m_drug_flag",
+            "conviction_summ_f_other_sex_flag", "conviction_summ_m_other_sex_flag", 
+            "conviction_summ_f_other_flag", "conviction_summ_m_other_flag", 
+            "conviction_violent_felony_flag", "conviction_serious_felony_flag",
             "conviction_sex_flag", "conviction_dv_flag", "conviction_dui_flag",
-            "max_conv_hier_scaled", "convicted_fcharge_count", "convicted_mcharge_count"),
+            "max_conv_hier_scaled", "convicted_fcharge_count", "convicted_mcharge_count",
+            "combined_cycles_count"),
             age = c("age"), 
             gender = c("gender"),
             location = c("county"),
@@ -1260,6 +1347,8 @@ sent_pr2 <- mcfaddenpr2(d = df %>%
 
 sent_pr2
 
+df %>%
+  count(age <18)
 ```
 
 R2 for sentence length
@@ -1268,17 +1357,104 @@ R2 for sentence length
 length_r2 <- contribution_r2(d = df %>%
               filter(sent_prison_flag == 1,
                          gender %in% c("M", "F"),
-                         race %in% c("Black", "White", "Hispanic", "Asian/PI")),
+                         race %in% c("Black", "White", "Hispanic", "Asian/PI"),
+                         age >= 18) ,
             dv = "prison_length_days",
-            crim_hist = c("days_prior_prison", "days_prior_jail", "prior_conviction_summ_f_violent_flag_count", 
-            "prior_conviction_summ_m_violent_flag_count", 
+            crim_hist = c("years_prior_prison", "years_prior_jail", "prior_sent_probation_flag_count",
+            "prior_conviction_summ_f_violent_flag_count", "prior_conviction_summ_m_violent_flag_count", 
             "prior_conviction_summ_f_property_flag_count", "prior_conviction_summ_m_property_flag_count", 
             "prior_conviction_summ_f_drug_flag_count", "prior_conviction_summ_m_drug_flag_count", 
+            "prior_conviction_summ_f_other_sex_flag_count", "prior_conviction_summ_m_other_sex_flag_count", 
+            "prior_conviction_summ_f_other_flag_count", "prior_conviction_summ_m_other_flag_count", 
+            "prior_conviction_violent_felony_flag_count", "prior_conviction_serious_felony_flag_count",
             "prior_conviction_sex_flag_count", "prior_conviction_dv_flag_count", "prior_conviction_dui_flag_count",
             "on_prob", "prior_max_conv_hier_scaled", 
-            "days_since_last_conv:prior_dummy"),
+            "inv_yrs_since_prior_conv"),
             current_crime = c("conviction_summ_f_violent_flag", "conviction_summ_m_violent_flag", "conviction_summ_f_property_flag", 
             "conviction_summ_m_property_flag", "conviction_summ_f_drug_flag", "conviction_summ_m_drug_flag", 
+            "conviction_summ_f_other_sex_flag", "conviction_summ_m_other_sex_flag", 
+            "conviction_summ_f_other_flag", "conviction_summ_m_other_flag", 
+            "conviction_violent_felony_flag", "conviction_serious_felony_flag",
+            "conviction_sex_flag", "conviction_dv_flag", "conviction_dui_flag",  
+            "max_conv_hier_scaled", "convicted_fcharge_count", "convicted_mcharge_count",
+            "combined_cycles_count"),
+            age = c("age"), 
+            gender = c("gender"),
+            location = c("county"),
+            race = c("race"))
+
+
+length_r2
+
+
+```
+
+TEST - Regression and pseudo R2 output for jail sentencing 
+```{r}
+
+jail_pr2 <- mcfaddenpr2(d = df %>%
+              filter(conviction_felony_flag == 0,
+                     conviction_misd_flag == 1,
+                     #convicted_flag == 1,
+                     sent_prison_flag == 0,
+                     gender %in% c("M", "F"),
+                     race %in% c("Black", "White", "Hispanic", "Asian/PI")),
+            dv = "sent_jail_flag",
+            crim_hist = c("years_prior_prison", "years_prior_jail", "prior_sent_probation_flag_count",
+            "prior_conviction_summ_f_violent_flag_count", "prior_conviction_summ_m_violent_flag_count", 
+            "prior_conviction_summ_f_property_flag_count", "prior_conviction_summ_m_property_flag_count", 
+            "prior_conviction_summ_f_drug_flag_count", "prior_conviction_summ_m_drug_flag_count", 
+            "prior_conviction_summ_f_other_sex_flag_count", "prior_conviction_summ_m_other_sex_flag_count", 
+            "prior_conviction_summ_f_other_flag_count", "prior_conviction_summ_m_other_flag_count",
+            "prior_conviction_violent_felony_flag_count", "prior_conviction_serious_felony_flag_count",
+            "prior_conviction_sex_flag_count", "prior_conviction_dv_flag_count", "prior_conviction_dui_flag_count",
+            "on_prob", "prior_max_conv_hier_scaled", 
+            "inv_yrs_since_prior_conv"),
+            current_crime = c("conviction_summ_f_violent_flag", "conviction_summ_m_violent_flag", "conviction_summ_f_property_flag", 
+            "conviction_summ_m_property_flag", "conviction_summ_f_drug_flag", "conviction_summ_m_drug_flag",
+            "conviction_summ_f_other_sex_flag", "conviction_summ_m_other_sex_flag", 
+            "conviction_summ_f_other_flag", "conviction_summ_m_other_flag", 
+            "conviction_violent_felony_flag", "conviction_serious_felony_flag",
+            "conviction_sex_flag", "conviction_dv_flag", "conviction_dui_flag",
+            "max_conv_hier_scaled", "convicted_fcharge_count", "convicted_mcharge_count"),
+            age = c("age"), 
+            gender = c("gender"),
+            location = c("county"),
+            race = c("race"))
+
+jail_pr2
+
+df %>%
+  mutate(orig_sent_incar = if_else(sent_prison_flag + sent_jail_flag + sent_imp_suspended_flag + sent_ex_suspended_flag > 0, 1, 0)) %>%
+  count(orig_sent_incar, sent_prison_flag, sent_jail_flag, sent_imp_suspended_flag, sent_ex_suspended_flag, sent_suspended_flag)
+```
+
+TEST - R2 for jail length for misdemeanor convictions
+```{r}
+
+jaillength_r2 <- contribution_r2(d = df %>%
+              filter(conviction_felony_flag == 0,
+                     conviction_misd_flag == 1,
+                     sent_prison_flag == 0,
+                     sent_jail_flag == 1,
+                     gender %in% c("M", "F"),
+                     race %in% c("Black", "White", "Hispanic", "Asian/PI")) ,
+            dv = "jail_length_days",
+            crim_hist = c("years_prior_prison", "years_prior_jail", "prior_sent_probation_flag_count",
+            "prior_conviction_summ_f_violent_flag_count", "prior_conviction_summ_m_violent_flag_count", 
+            "prior_conviction_summ_f_property_flag_count", "prior_conviction_summ_m_property_flag_count", 
+            "prior_conviction_summ_f_drug_flag_count", "prior_conviction_summ_m_drug_flag_count", 
+            "prior_conviction_summ_f_other_sex_flag_count", "prior_conviction_summ_m_other_sex_flag_count", 
+            "prior_conviction_summ_f_other_flag_count", "prior_conviction_summ_m_other_flag_count", 
+            "prior_conviction_violent_felony_flag_count", "prior_conviction_serious_felony_flag_count",
+            "prior_conviction_sex_flag_count", "prior_conviction_dv_flag_count", "prior_conviction_dui_flag_count",
+            "on_prob", "prior_max_conv_hier_scaled", 
+            "inv_yrs_since_prior_conv"),
+            current_crime = c("conviction_summ_f_violent_flag", "conviction_summ_m_violent_flag", "conviction_summ_f_property_flag", 
+            "conviction_summ_m_property_flag", "conviction_summ_f_drug_flag", "conviction_summ_m_drug_flag", 
+            "conviction_summ_f_other_sex_flag", "conviction_summ_m_other_sex_flag", 
+            "conviction_summ_f_other_flag", "conviction_summ_m_other_flag", 
+            "conviction_violent_felony_flag", "conviction_serious_felony_flag",
             "conviction_sex_flag", "conviction_dv_flag", "conviction_dui_flag",  
             "max_conv_hier_scaled", "convicted_fcharge_count", "convicted_mcharge_count"),
             age = c("age"), 
@@ -1286,11 +1462,45 @@ length_r2 <- contribution_r2(d = df %>%
             location = c("county"),
             race = c("race"))
 
-#names(prison_sent$model)
 
-length_r2
+jaillength_r2
+
+
 ```
 
+TEST - Regression and pseudo R2 output for suspension of incarcerative sentence
+```{r}
 
+susp_pr2 <- mcfaddenpr2(d = df %>%
+              mutate(orig_sent_incar = if_else(sent_prison_flag + sent_jail_flag + sent_ex_suspended_flag > 0, 1, 0)) %>%
+              filter(orig_sent_incar == 1,
+                     gender %in% c("M", "F"),
+                     race %in% c("Black", "White", "Hispanic", "Asian/PI")),
+            dv = "sent_ex_suspended_flag",
+            crim_hist = c("years_prior_prison", "years_prior_jail", "prior_sent_probation_flag_count",
+            "prior_conviction_summ_f_violent_flag_count", "prior_conviction_summ_m_violent_flag_count", 
+            "prior_conviction_summ_f_property_flag_count", "prior_conviction_summ_m_property_flag_count", 
+            "prior_conviction_summ_f_drug_flag_count", "prior_conviction_summ_m_drug_flag_count", 
+            "prior_conviction_summ_f_other_sex_flag_count", "prior_conviction_summ_m_other_sex_flag_count", 
+            "prior_conviction_summ_f_other_flag_count", "prior_conviction_summ_m_other_flag_count",
+            "prior_conviction_violent_felony_flag_count", "prior_conviction_serious_felony_flag_count",
+            "prior_conviction_sex_flag_count", "prior_conviction_dv_flag_count", "prior_conviction_dui_flag_count",
+            "on_prob", "prior_max_conv_hier_scaled", 
+            "inv_yrs_since_prior_conv"),
+            current_crime = c("conviction_summ_f_violent_flag", "conviction_summ_m_violent_flag", "conviction_summ_f_property_flag", 
+            "conviction_summ_m_property_flag", "conviction_summ_f_drug_flag", "conviction_summ_m_drug_flag",
+            "conviction_summ_f_other_sex_flag", "conviction_summ_m_other_sex_flag", 
+            "conviction_summ_f_other_flag", "conviction_summ_m_other_flag", 
+            "conviction_violent_felony_flag", "conviction_serious_felony_flag",
+            "conviction_sex_flag", "conviction_dv_flag", "conviction_dui_flag",
+            "max_conv_hier_scaled", "convicted_fcharge_count", "convicted_mcharge_count"),
+            age = c("age"), 
+            gender = c("gender"),
+            location = c("county"),
+            race = c("race"))
+
+susp_pr2
+
+```
 
 
