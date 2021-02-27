@@ -26,6 +26,7 @@ library(broom) # to get stuff out of the objects lmtest produces
 library(pscl) #package for pseudo R2 (pR2 function)
 library(RColorBrewer)
 library(sjPlot)
+library(waffle)
 ```
 
 # Load and standardize collapsed dataset
@@ -129,10 +130,177 @@ df$county <- relevel(df$county, ref ="LOS ANGELES")
 
 ```
 
+# Load and tidy CA population data from DOF
+tidy ca_age data
+```{r}
+ca_age <- read_xlsx("G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/DOF demographic data 2019/P1B_State_Age.xlsx", sheet = 3, skip = 2, col_names =T) 
+
+
+# ca_age_full <- ca_age %>%
+#   # extract columns
+#    select(`Population`, `2019`) %>%
+#   
+#   # rename column names
+#   rename(Age = Population) %>%
+#   
+#   # remove rows that are not ages
+#   slice(-c(1, 103)) %>%
+# 
+#   # recode variable
+#   mutate(`2019` = as.integer(`2019`),
+#           Age = as.integer(if_else(Age == "100+", "100", Age)),
+#          
+#          # add age category column
+#          `Age Category` = as.factor(case_when(
+#            Age <= 14 ~ "0-14 yrs",
+#            Age > 14 & Age <= 19 ~ "15-19 yrs",
+#            Age > 19 & Age <= 29 ~ "20-29 yrs",
+#            Age > 29 & Age <= 39 ~ "30-39 yrs",
+#            Age > 39 & Age <= 49 ~ "40-49 yrs",
+#            Age > 49 & Age <= 59 ~ "50-59 yrs",
+#            TRUE ~ "60+ yrs"
+#          ))) 
+
+ca_age18 <- ca_age %>%
+ # extract columns
+   select(`Population`, `2019`) %>%
+  
+  # rename column names
+  rename(Age = Population) %>%
+  
+  # remove rows that are not ages
+  slice(-c(1, 103)) %>%
+
+  # recode variable
+  mutate(`2019` = as.integer(`2019`),
+          Age = as.integer(if_else(Age == "100+", "100", Age)),
+         
+         # add age category column
+         `Age Category` = as.factor(case_when(
+           Age <= 17 ~ "0-17 yrs",
+           Age > 17 & Age <= 19 ~ "18-19 yrs",
+           Age > 19 & Age <= 29 ~ "20-29 yrs",
+           Age > 29 & Age <= 39 ~ "30-39 yrs",
+           Age > 39 & Age <= 49 ~ "40-49 yrs",
+           Age > 49 & Age <= 59 ~ "50-59 yrs",
+           TRUE ~ "60+ yrs"
+         ))) %>%
+  
+  #remove people less than 18
+  filter(`Age Category`!= "0-17 yrs") %>%
+  
+  # add frequency column
+  group_by(`Age Category`) %>%
+  summarise(Frequency = sum(`2019`)) %>%
+  
+  # add percentage column
+  mutate(Percentage = Frequency / sum(Frequency) * 100)
+
+# ca_age <- ca_age %>%
+#   # extract columns
+#    select(`Population`, `2019`) %>%
+#   
+#   # rename column names
+#   rename(Age = Population) %>%
+#   
+#   # remove rows that are not ages
+#   slice(-c(1, 103)) %>%
+# 
+#   # recode variable
+#   mutate(`2019` = as.integer(`2019`),
+#           Age = as.integer(if_else(Age == "100+", "100", Age)),
+#          
+#          # add age category column
+#          `Age Category` = as.factor(case_when(
+#            Age <= 14 ~ "0-14 yrs",
+#            Age > 14 & Age <= 19 ~ "15-19 yrs",
+#            Age > 19 & Age <= 29 ~ "20-29 yrs",
+#            Age > 29 & Age <= 39 ~ "30-39 yrs",
+#            Age > 39 & Age <= 49 ~ "40-49 yrs",
+#            Age > 49 & Age <= 59 ~ "50-59 yrs",
+#            TRUE ~ "60+ yrs"
+#          ))) %>%
+#   
+#   # add frequency column
+#   group_by(`Age Category`) %>%
+#   summarise(Frequency = sum(`2019`)) %>%
+#   
+#   # add percentage column
+#   mutate(Percentage = Frequency / sum(Frequency) * 100)
+ca_age18
+```
+
+tidy ca_eth data
+```{r}
+ca_eth <- read_xlsx("G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/DOF demographic data 2019/P1D_State_Race_Ethnicity.xlsx", sheet = 2, skip = 2, col_names =T) 
+
+ca_eth <- ca_eth %>%
+  # extract columns
+   select(`Race/Ethnicity`, `2019`) %>%
+  
+  # remove last two rows which are total and a note
+  slice(-c(8,9)) %>%
+
+  # recode variable
+  mutate(`2019` = as.integer(`2019`)) %>%
+  # add percentage column
+  mutate(Percentage = `2019` / sum(`2019`) * 100)
+
+ca_eth
+  
+```
+
+tidy ca_sex data
+```{r}
+ca_sex <- read_xlsx("G:/CrimJustice/Dispositions by Race and Ethnicity/DOJ Data 2019/DOF demographic data 2019/P1C_State_Age-Group_Sex.xlsx", sheet = 2, skip = 2, col_names =T) 
+
+ca_sex <- ca_sex %>%
+  # extract columns
+   select(`Women, by age group:`, `2019`) %>%
+  
+   # rename column names
+  rename(Sex = `Women, by age group:`) %>%
+  
+  #select only adult ages
+  slice(5:22, 30:47 ) %>%
+  
+  rename(age = Sex) %>%
+  rename(n = `2019`) %>%
+  
+  mutate(sex = c(rep("Women", 18), rep("Men", 18)),
+         n = as.numeric(n)) %>%
+  
+  #pivot_wider(names_from = sex, values_from = n) %>%
+  
+  group_by(sex) %>%
+  summarise(total = sum(n)) %>%
+  mutate(percent = total/sum(total)*100)
+  
+  
+  # select rows that are total women and total men
+  #slice(23,48) %>%
+  
+# 
+#   # recode variables
+#   mutate(`2019` = as.integer(`2019`),
+#          Sex = if_else(Sex == "Total women", "Women", "Men")) %>%
+#   
+#   # add percentage column
+#   mutate(Percentage = `2019` / sum(`2019`) * 100)
+  
+
+ca_sex
+```
+
+
+
 # Descriptives
 
 Numbers for Figure 1 flow chart
 ```{r warning=FALSE}
+#all
+nrow(df)
+
 df %>%
   count(court_disp) %>%
   mutate(percent = n/sum(n)) #final court dispositions vs law enforcement/prosecution release dispositions
@@ -142,17 +310,17 @@ df %>%
   count(convicted_flag) %>%
   mutate(percent = n/sum(n)) #convicted out of those with a court disposition
 
-df %>%
-  filter(convicted_flag ==1) %>%
-  count(sent_prison_flag) %>%
-  mutate(percent = n/sum(n)) #prison sentences out of those convicted
+# df %>%
+#   filter(convicted_flag ==1) %>%
+#   count(sent_prison_flag) %>%
+#   mutate(percent = n/sum(n)) #prison sentences out of those convicted
 
-df %>%
+sent = df %>%
   filter(convicted_flag ==1) %>%
   count(sent_prison_flag, sent_jail_flag, sent_probation_flag) %>%
   mutate(percent = n/sum(n)) #jail and probation sentences out of those convicted
 
-
+write.csv(sent, "sentencing_table.csv")
 ```
 
 Demographics of felony defendants (court disposition)
@@ -160,11 +328,13 @@ Demographics of felony defendants (court disposition)
 df %>%
   filter(court_disp ==1) %>%
   count(age_cat) %>%
+  filter(age_cat != "Under 18") %>%
   mutate(percent = round(n/sum(n)*100, 1)) #age distribution by age category
 
 df %>%
   filter(court_disp ==1) %>%
   count(gender) %>%
+  filter(gender !="X") %>%
   mutate(percent = round(n/sum(n)*100, 1)) #gender distribution
 
 df %>%
@@ -276,7 +446,11 @@ df %>%
   # count(is.na(days_prior_jail)) %>%
   # mutate(percent = round(n/sum(n)*100, 1))
 
-
+### categorical priors
+df %>%
+  filter(court_disp ==1) %>%
+  count(prior_record_cat) %>%
+  mutate(percent = round(n/sum(n)*100, 1))
 ```
 
 Arrest offense type for felony defendants (court dispo)
@@ -423,6 +597,13 @@ df %>%
   group_by(race) %>%
   summarise(conviction_of_filings = round(mean(convicted_flag)*100,1))
 
+#felony conviction rate out of cases filed, all
+df %>%
+  filter(convicted_flag == 1) %>%
+  count(conviction_felony_flag, conviction_misd_flag, conviction_inf_flag) %>%
+  mutate(perc = round(n/sum(n)*100, 1))
+
+
 #felony conviction rate out of cases filed by race
 df %>%
   filter(convicted_flag == 1) %>%
@@ -463,6 +644,7 @@ df %>%
   ggplot(aes(fill=race, y= conviction_of_filings, x=race)) + 
     geom_bar(position="dodge", stat="identity") +
     scale_color_brewer(palette = "Set1")+
+    ylim(0, 100) +
     geom_text(aes(label=round(conviction_of_filings, 0)), position=position_dodge(width=0.9), vjust=-0.25)
 
 ggsave("conviction rate by race.png", path = "G:/CrimJustice/Dispositions by Race and Ethnicity/Figures 2019")
@@ -477,6 +659,7 @@ df %>%
   ggplot(aes(fill=race, y= felony_conv_of_conv, x=race)) + 
     geom_bar(position="dodge", stat="identity") +
     scale_color_brewer(palette = "Set1")+
+    ylim(0, 100) +
     geom_text(aes(label=round(felony_conv_of_conv, 0)), position=position_dodge(width=0.9), vjust=-0.25)
 
 ggsave("felony conviction rate by race.png", path = "G:/CrimJustice/Dispositions by Race and Ethnicity/Figures 2019")
@@ -492,6 +675,7 @@ df %>%
   ggplot(aes(fill=race, y= prison_of_fel_convicted, x=race)) + 
     geom_bar(position="dodge", stat="identity") +
     scale_color_brewer(palette = "Set1")+
+    ylim(0, 100) +
     geom_text(aes(label=round(prison_of_fel_convicted, 0)), position=position_dodge(width=0.9), vjust=-0.25)
 
 ggsave("prison sentencing rate by race.png", path = "G:/CrimJustice/Dispositions by Race and Ethnicity/Figures 2019")
@@ -507,6 +691,7 @@ df %>%
   ggplot(aes(fill=race, y= prison_length_yrs, x=race)) + 
     geom_bar(position="dodge", stat="identity") +
     scale_color_brewer(palette = "Set1")+
+    ylim(0, 15) +
     geom_text(aes(label=round(prison_length_yrs, 1)), position=position_dodge(width=0.9), vjust=-0.25)
 
 ggsave("prison sentence length by race.png", path = "G:/CrimJustice/Dispositions by Race and Ethnicity/Figures 2019")
@@ -527,6 +712,7 @@ df %>%
     geom_bar(position="dodge", stat="identity") +
     scale_color_brewer(palette = "Set1")+
     theme(axis.text.x=element_blank()) +
+    ylim(0, 100) +
     geom_text(aes(label=round(conviction_of_filings, 0)), position=position_dodge(width=0.9), vjust=-0.25)
 
 ggsave("conviction rate by prior record.png", path = "G:/CrimJustice/Dispositions by Race and Ethnicity/Figures 2019")
@@ -542,6 +728,7 @@ df %>%
     geom_bar(position="dodge", stat="identity") +
     scale_color_brewer(palette = "Set1")+
     theme(axis.text.x=element_blank()) +
+    ylim(0, 100) +
     geom_text(aes(label=round(felony_conv_of_conv, 0)), position=position_dodge(width=0.9), vjust=-0.25)
 
 ggsave("felony conviction rate by prior record.png", path = "G:/CrimJustice/Dispositions by Race and Ethnicity/Figures 2019")
@@ -557,6 +744,7 @@ df %>%
     geom_bar(position="dodge", stat="identity") +
     scale_color_brewer(palette = "Set1")+
     theme(axis.text.x=element_blank()) +
+    ylim(0, 100) +
     geom_text(aes(label=round(prison_of_fel_convicted, 0)), position=position_dodge(width=0.9), vjust=-0.25)
 
 ggsave("prison sentencing rate by prior record.png", path = "G:/CrimJustice/Dispositions by Race and Ethnicity/Figures 2019")
@@ -572,6 +760,7 @@ df %>%
     geom_bar(position="dodge", stat="identity") +
     scale_color_brewer(palette = "Set1")+
     theme(axis.text.x=element_blank()) +
+    ylim(0, 15) +
     geom_text(aes(label=round(prison_length_yrs, 1)), position=position_dodge(width=0.9), vjust=-0.25)
 
 ggsave("prison sentence length by prior record.png", path = "G:/CrimJustice/Dispositions by Race and Ethnicity/Figures 2019")
@@ -591,6 +780,7 @@ df %>%
   ggplot(aes(fill=arrest_f_offense_type, y= conviction_of_filings, x=arrest_f_offense_type)) + 
     geom_bar(position="dodge", stat="identity") +
     scale_color_brewer(palette = "Set1")+
+    ylim(0, 100) +
     geom_text(aes(label=round(conviction_of_filings, 0)), position=position_dodge(width=0.9), vjust=-0.25)
 
 ggsave("conviction rate by arrest offense type.png", path = "G:/CrimJustice/Dispositions by Race and Ethnicity/Figures 2019")
@@ -606,6 +796,7 @@ df %>%
   ggplot(aes(fill=arrest_f_offense_type, y= felony_conv_of_conv, x=arrest_f_offense_type)) + 
     geom_bar(position="dodge", stat="identity") +
     scale_color_brewer(palette = "Set1")+
+    ylim(0, 100) +
     geom_text(aes(label=round(felony_conv_of_conv, 0)), position=position_dodge(width=0.9), vjust=-0.25)
 
 ggsave("felony conviction rate by arrest offense type.png", path = "G:/CrimJustice/Dispositions by Race and Ethnicity/Figures 2019")
@@ -621,6 +812,7 @@ df %>%
   ggplot(aes(fill=arrest_f_offense_type, y= prison_of_fel_convicted, x=arrest_f_offense_type)) + 
     geom_bar(position="dodge", stat="identity") +
     scale_color_brewer(palette = "Set1")+
+    ylim(0, 100) +
     geom_text(aes(label=round(prison_of_fel_convicted, 0)), position=position_dodge(width=0.9), vjust=-0.25)
 
 ggsave("prison sentencing rate by arrest offense type.png", path = "G:/CrimJustice/Dispositions by Race and Ethnicity/Figures 2019")
@@ -636,6 +828,7 @@ df %>%
   ggplot(aes(fill=arrest_f_offense_type, y= prison_length_yrs, x=arrest_f_offense_type)) + 
     geom_bar(position="dodge", stat="identity") +
     scale_color_brewer(palette = "Set1")+
+    ylim(0, 15) +
     geom_text(aes(label=round(prison_length_yrs, 1)), position=position_dodge(width=0.9), vjust=-0.25)
 
 ggsave("prison sentence length by arrest offense type.png", path = "G:/CrimJustice/Dispositions by Race and Ethnicity/Figures 2019")
@@ -801,8 +994,70 @@ df %>%
 
 ```
 
+Numbers for Appendix C
+```{r}
+#for C1
+df %>%
+  filter(filed_flag == 1,
+         race %in% c("Black", "White", "Hispanic", "Asian/PI"),
+         gender %in% c("M", "F"),
+         age >= 18) %>%
+  group_by(race) %>%
+  summarise(conviction_rate = round(mean(convicted_flag)*100, 1))
 
 
+#for C2
+df %>%
+  filter(convicted_flag == 1,
+         race %in% c("Black", "White", "Hispanic", "Asian/PI"),
+         gender %in% c("M", "F"),
+         age >= 18) %>%
+  group_by(race) %>%
+  summarise(prison_rate = round(mean(sent_prison_flag)*100, 1))
+```
+
+
+#waffle charts
+```{r waffles}
+
+  #savings <- c(
+ #   `Mortgage\n($84,911)` = 84911, `Auto and\ntuition loans\n($14,414)` = 14414,
+ #   `Home equity loans\n($10,062)` = 10062, `Credit Cards\n($8,565)` = 8565
+  #)
+ # waffle(
+   # savings / 392, rows = 7, size = 0.5, legend_pos = "bottom",
+   # colors = c("#c7d4b6", "#a3aabd", "#a0d0de", "#97b5cf")
+  #)
+df %>%
+  filter(court_disp ==1) %>%
+  count(prior_record_cat) %>%
+  mutate(percent = round(n/sum(n)*100, 1))
+
+priors <- c(
+  'No prior convictions\n(20.7%)' = 21, 'Prior conviction with no prior incarceration\n(17.0%)'= 17, 'Prior jail with no prior prison\n(37.2%)' = 37, 'Prior prison\n(25.1%)' = 25
+)
+waffle(
+  priors , rows = 5, legend_pos = "top", colors = c("#2b83ba", "#5e3c99", "#d7191c", "#a6d96a")
+)
+
+df %>%
+  filter(court_disp ==1) %>%
+  count(arrest_f_offense_type) %>%
+  mutate(percent = round(n/sum(n)*100, 1))
+
+
+offtype <- c(
+  'Violent\n(33.9%)' = 34, 'Property\n(32.2%)'= 32, 'Drug\n(12.1%)' = 12, 'Other\n(21.9%)' = 22
+)
+waffle(
+  offtype , rows = 5, legend_pos = "top", 
+  colors = c("#d7191c", "#2b83ba", "#a6d96a", "#5e3c99")
+)
+
+
+
+
+```
 # Regressions
 
 Set desired base levels for regressions
@@ -1050,7 +1305,6 @@ Variable tracking
 
 # Regression output including variable contributions (by category)
 
-
 Create function to get McFadden Pseudo R2 values for groups of variables in a glm regression
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 
@@ -1272,6 +1526,47 @@ conv_pr2 <- mcfaddenpr2(d = df %>%
 
 conv_pr2
 
+conv_relrisk <- conv_pr2$full_model %>%
+  select(term, relative_risk, p.value) %>%
+  filter(grepl("race", term)) %>%
+  rename(race = term) %>%
+  mutate(race = gsub("race", "", race)) %>%
+  bind_rows(tibble(race = "White", relative_risk = 1))
+
+df %>%
+  filter(filed_flag == 1,
+         race %in% c("Black", "White", "Hispanic", "Asian/PI"),
+         gender %in% c("M", "F"),
+         age >= 18) %>%
+  group_by(race) %>%
+  summarise(conviction_rate = mean(convicted_flag)*100) %>%
+  left_join(conv_relrisk) %>%
+  mutate(estimated_white_rate = conviction_rate/relative_risk) %>%
+  mutate(across(contains("rate"), ~round(.x, 1)))
+
+#make it a chart
+df %>%
+  filter(filed_flag == 1,
+         race %in% c("Black", "White", "Hispanic", "Asian/PI"),
+         gender %in% c("M", "F"),
+         age >= 18) %>%
+  group_by(race) %>%
+  summarise(conviction_rate = mean(convicted_flag)*100) %>%
+  left_join(conv_relrisk) %>%
+  mutate(estimated_white_rate = conviction_rate/relative_risk) %>%
+  mutate(across(contains("rate"), ~round(.x, 1))) %>%
+  rename(observed = conviction_rate) %>%
+  rename(estimated = estimated_white_rate) %>%
+  pivot_longer(c(observed, estimated)) %>%
+  rename(conviction_rate = value) %>%
+  ggplot(aes(fill=name, y= conviction_rate, x=race)) + 
+    geom_bar(position="dodge", stat="identity") +
+    scale_color_brewer(palette = "Set1")+
+    ylim(0, 100) +
+    geom_text(aes(label=round(conviction_rate, 0)), position=position_dodge(width=0.9), vjust=-0.25)
+
+ggsave("conviction rate relative risk chart.png", path = "G:/CrimJustice/Dispositions by Race and Ethnicity/Figures 2019")
+	
 ```
 
 
@@ -1310,6 +1605,25 @@ fel_pr2 <- mcfaddenpr2(d = df %>%
 
 fel_pr2
 
+fel_relrisk <- fel_pr2$full_model %>%
+  select(term, relative_risk, p.value) %>%
+  filter(grepl("race", term)) %>%
+  rename(race = term) %>%
+  mutate(race = gsub("race", "", race)) %>%
+  bind_rows(tibble(race = "White", relative_risk = 1))
+
+df %>%
+  filter(convicted_flag == 1,
+         race %in% c("Black", "White", "Hispanic", "Asian/PI"),
+         gender %in% c("M", "F"),
+         age >= 18) %>%
+  group_by(race) %>%
+  summarise(felony_conviction_rate = mean(conviction_felony_flag)*100) %>%
+  left_join(fel_relrisk) %>%
+  mutate(estimated_white_rate = felony_conviction_rate/relative_risk) %>%
+  mutate(across(contains("rate"), ~round(.x, 1)))
+
+#chart
 ```
 
 
@@ -1347,8 +1661,23 @@ sent_pr2 <- mcfaddenpr2(d = df %>%
 
 sent_pr2
 
+pris_relrisk <- sent_pr2$full_model %>%
+  select(term, relative_risk, p.value) %>%
+  filter(grepl("race", term)) %>%
+  rename(race = term) %>%
+  mutate(race = gsub("race", "", race)) %>%
+  bind_rows(tibble(race = "White", relative_risk = 1))
+
 df %>%
-  count(age <18)
+  filter(conviction_felony_flag == 1,
+         race %in% c("Black", "White", "Hispanic", "Asian/PI"),
+         gender %in% c("M", "F"),
+         age >= 18) %>%
+  group_by(race) %>%
+  summarise(prison_rate = mean(sent_prison_flag)*100) %>%
+  left_join(pris_relrisk) %>%
+  mutate(estimated_white_rate = prison_rate/relative_risk) %>%
+  mutate(across(contains("rate"), ~round(.x, 1)))
 ```
 
 R2 for sentence length
@@ -1386,7 +1715,26 @@ length_r2 <- contribution_r2(d = df %>%
 
 length_r2
 
+pris_len <- length_r2$full_model %>%
+  select(term, estimate, p.value) %>%
+  filter(grepl("race", term)) %>%
+  rename(race = term) %>%
+  mutate(race = gsub("race", "", race)) %>%
+  bind_rows(tibble(race = "White", estimate = 0))
 
+df %>%
+  filter(sent_prison_flag == 1,
+         race %in% c("Black", "White", "Hispanic", "Asian/PI"),
+         gender %in% c("M", "F"),
+         age >= 18) %>%
+  group_by(race) %>%
+  summarise(prison_yrs = mean(prison_length_days/365.25, na.rm = T)) %>%
+  left_join(pris_len) %>%
+  mutate(estimated_white_yrs = prison_yrs-  estimate/365.25) %>%
+  mutate(across(contains("yrs"), ~round(.x, 1)))
+
+
+#don't show the estimated white chart bc race was not significant
 ```
 
 TEST - Regression and pseudo R2 output for jail sentencing 
