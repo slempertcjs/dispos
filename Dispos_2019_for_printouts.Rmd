@@ -1566,6 +1566,18 @@ df %>%
     geom_text(aes(label=round(conviction_rate, 0)), position=position_dodge(width=0.9), vjust=-0.25)
 
 ggsave("conviction rate relative risk chart.png", path = "G:/CrimJustice/Dispositions by Race and Ethnicity/Figures 2019")
+
+#plot pr2 values
+conv_pr2$pr2 %>%
+  filter(model != "full") %>%
+  rename(variables = model) %>%
+  rename(contribution = difference) %>%
+  ggplot(aes(fill=variables, y= contribution, x=variables)) + 
+    geom_bar(position="dodge", stat="identity") +
+    scale_color_brewer(palette = "Set1")
+
+ggsave("variable contribution - conviction.png", path = "G:/CrimJustice/Dispositions by Race and Ethnicity/Figures 2019")
+
 	
 ```
 
@@ -1624,6 +1636,16 @@ df %>%
   mutate(across(contains("rate"), ~round(.x, 1)))
 
 #chart
+fel_pr2$pr2 %>%
+  filter(model != "full") %>%
+  rename(variables = model) %>%
+  rename(contribution = difference) %>%
+  ggplot(aes(fill=variables, y= contribution, x=variables)) + 
+    geom_bar(position="dodge", stat="identity") +
+    scale_color_brewer(palette = "Set1")
+
+ggsave("variable contribution - felony conviction.png", path = "G:/CrimJustice/Dispositions by Race and Ethnicity/Figures 2019")
+
 ```
 
 
@@ -1678,6 +1700,18 @@ df %>%
   left_join(pris_relrisk) %>%
   mutate(estimated_white_rate = prison_rate/relative_risk) %>%
   mutate(across(contains("rate"), ~round(.x, 1)))
+
+#chart
+sent_pr2$pr2 %>%
+  filter(model != "full") %>%
+  rename(variables = model) %>%
+  rename(contribution = difference) %>%
+  ggplot(aes(fill=variables, y= contribution, x=variables)) + 
+    geom_bar(position="dodge", stat="identity") +
+    scale_color_brewer(palette = "Set1")
+
+ggsave("variable contribution - prison sentence.png", path = "G:/CrimJustice/Dispositions by Race and Ethnicity/Figures 2019")
+
 ```
 
 R2 for sentence length
@@ -1735,6 +1769,17 @@ df %>%
 
 
 #don't show the estimated white chart bc race was not significant
+
+#chart
+length_r2$r2 %>%
+  filter(model != "full") %>%
+  rename(variables = model) %>%
+  rename(contribution = difference) %>%
+  ggplot(aes(fill=variables, y= contribution, x=variables)) + 
+    geom_bar(position="dodge", stat="identity") +
+    scale_color_brewer(palette = "Set1")
+
+ggsave("variable contribution - prison length.png", path = "G:/CrimJustice/Dispositions by Race and Ethnicity/Figures 2019")
 ```
 
 TEST - Regression and pseudo R2 output for jail sentencing 
