@@ -272,6 +272,7 @@ dsam <- dsam %>%
 Join charge hierarchy and add prefixes to charge flags
 ```{r}
 
+
 #Load complete charge hierarchy with flags that have been worked on by lawyers, version where I kept the summary codes
 load("G:/CrimJustice/PretrialAssessmentPilot/Complete Charge Code Hierarchy_SL.RData")
 
@@ -2372,5 +2373,7 @@ dispos %>%
 df %>%
   count(RECORD_ID) %>%
   mutate(perc = n/sum(n))
+
+
 ```
 
