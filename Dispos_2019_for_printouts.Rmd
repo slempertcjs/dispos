@@ -648,12 +648,14 @@ df %>%
          race %in% c("Black", "White", "Hispanic", "Asian/PI"),
          gender %in% c("M", "F")) %>%
   group_by(race) %>%
-  summarise(conviction_of_filings = round(mean(convicted_flag)*100,1)) %>%
+  summarise(conviction_of_filings = mean(convicted_flag)) %>%
   ggplot(aes(fill=race, y= conviction_of_filings, x=race)) + 
     geom_bar(position="dodge", stat="identity") +
-    scale_color_brewer(palette = "Set1")+
     ylim(0, 100) +
-    geom_text(aes(label=round(conviction_of_filings, 0)), position=position_dodge(width=0.9), vjust=-0.25)
+    geom_text(aes(label=scales::percent(conviction_of_filings, accuracy = .1L)), position=position_dodge(width=0.9), vjust=-0.25)+
+    theme(axis.text.x=element_blank(), legend.position = "none") +
+    labs(x = element_blank(), y = element_blank(), fill = element_blank()) + 
+    scale_y_continuous(labels = scales::percent, limits=c(0,1))
 
 ggsave("conviction rate by race.png", path = "G:/CrimJustice/Dispositions by Race and Ethnicity/Figures 2019")
 
@@ -663,12 +665,13 @@ df %>%
          race %in% c("Black", "White", "Hispanic", "Asian/PI"),
          gender %in% c("M", "F")) %>%
   group_by(race) %>%
-  summarise(felony_conv_of_conv = round(mean(conviction_felony_flag)*100,1)) %>%
+  summarise(felony_conv_of_conv = mean(conviction_felony_flag)) %>%
   ggplot(aes(fill=race, y= felony_conv_of_conv, x=race)) + 
     geom_bar(position="dodge", stat="identity") +
-    scale_color_brewer(palette = "Set1")+
-    ylim(0, 100) +
-    geom_text(aes(label=round(felony_conv_of_conv, 0)), position=position_dodge(width=0.9), vjust=-0.25)
+    geom_text(aes(label=scales::percent(felony_conv_of_conv, accuracy = .1L)), position=position_dodge(width=0.9), vjust=-0.25)+
+    theme(axis.text.x=element_blank(), legend.position = "none") +
+    labs(x = element_blank(), y = element_blank(), fill = element_blank()) + 
+    scale_y_continuous(labels = scales::percent, limits=c(0,1))
 
 ggsave("felony conviction rate by race.png", path = "G:/CrimJustice/Dispositions by Race and Ethnicity/Figures 2019")
 
@@ -679,12 +682,13 @@ df %>%
          race %in% c("Black", "White", "Hispanic", "Asian/PI"),
          gender %in% c("M", "F")) %>%
   group_by(race) %>%
-  summarise(prison_of_fel_convicted = round(mean(sent_prison_flag)*100,1)) %>%
+  summarise(prison_of_fel_convicted = mean(sent_prison_flag)) %>%
   ggplot(aes(fill=race, y= prison_of_fel_convicted, x=race)) + 
     geom_bar(position="dodge", stat="identity") +
-    scale_color_brewer(palette = "Set1")+
-    ylim(0, 100) +
-    geom_text(aes(label=round(prison_of_fel_convicted, 0)), position=position_dodge(width=0.9), vjust=-0.25)
+    geom_text(aes(label=scales::percent(prison_of_fel_convicted, accuracy = .1L)), position=position_dodge(width=0.9), vjust=-0.25)+
+    theme(axis.text.x=element_blank(), legend.position = "none") +
+    labs(x = element_blank(), y = element_blank(), fill = element_blank()) + 
+    scale_y_continuous(labels = scales::percent, limits=c(0,1))
 
 ggsave("prison sentencing rate by race.png", path = "G:/CrimJustice/Dispositions by Race and Ethnicity/Figures 2019")
 
@@ -698,9 +702,10 @@ df %>%
   summarise(prison_length_yrs = round(mean(prison_length_days, na.rm = T)/365.25, 1), perc_length_na = round(mean(is.na(prison_length_yrs))*100,1)) %>%
   ggplot(aes(fill=race, y= prison_length_yrs, x=race)) + 
     geom_bar(position="dodge", stat="identity") +
-    scale_color_brewer(palette = "Set1")+
     ylim(0, 15) +
-    geom_text(aes(label=round(prison_length_yrs, 1)), position=position_dodge(width=0.9), vjust=-0.25)
+    geom_text(aes(label=round(prison_length_yrs, 1)), position=position_dodge(width=0.9), vjust=-0.25) +
+    theme(axis.text.x=element_blank()) +
+    labs(x = element_blank(), y = element_blank(), fill = element_blank())
 
 ggsave("prison sentence length by race.png", path = "G:/CrimJustice/Dispositions by Race and Ethnicity/Figures 2019")
 
@@ -715,13 +720,15 @@ df %>%
          race %in% c("Black", "White", "Hispanic", "Asian/PI"),
          gender %in% c("M", "F")) %>%
   group_by(prior_record_cat) %>%
-  summarise(conviction_of_filings = round(mean(convicted_flag)*100,1)) %>%
+  summarise(conviction_of_filings = mean(convicted_flag)) %>%
   ggplot(aes(fill=prior_record_cat, y= conviction_of_filings, x=prior_record_cat)) + 
     geom_bar(position="dodge", stat="identity") +
-    scale_color_brewer(palette = "Set1")+
+    scale_fill_brewer(palette = "Accent")+
     theme(axis.text.x=element_blank()) +
-    ylim(0, 100) +
-    geom_text(aes(label=round(conviction_of_filings, 0)), position=position_dodge(width=0.9), vjust=-0.25)
+    geom_text(aes(label=scales::percent(conviction_of_filings, accuracy = .1L)), position=position_dodge(width=0.9), vjust=-0.25)+
+    theme(axis.text.x=element_blank(), legend.position = "none") +
+    labs(x = element_blank(), y = element_blank(), fill = element_blank()) + 
+    scale_y_continuous(labels = scales::percent, limits=c(0,1))
 
 ggsave("conviction rate by prior record.png", path = "G:/CrimJustice/Dispositions by Race and Ethnicity/Figures 2019")
 
@@ -731,13 +738,15 @@ df %>%
          race %in% c("Black", "White", "Hispanic", "Asian/PI"),
          gender %in% c("M", "F")) %>%
   group_by(prior_record_cat) %>%
-  summarise(felony_conv_of_conv = round(mean(conviction_felony_flag)*100,1)) %>%
+  summarise(felony_conv_of_conv = mean(conviction_felony_flag)) %>%
   ggplot(aes(fill=prior_record_cat, y= felony_conv_of_conv, x=prior_record_cat)) + 
     geom_bar(position="dodge", stat="identity") +
-    scale_color_brewer(palette = "Set1")+
+    scale_fill_brewer(palette = "Accent")+
     theme(axis.text.x=element_blank()) +
-    ylim(0, 100) +
-    geom_text(aes(label=round(felony_conv_of_conv, 0)), position=position_dodge(width=0.9), vjust=-0.25)
+    geom_text(aes(label=scales::percent(felony_conv_of_conv, accuracy = .1L)), position=position_dodge(width=0.9), vjust=-0.25)+
+    theme(axis.text.x=element_blank(), legend.position = "none") +
+    labs(x = element_blank(), y = element_blank(), fill = element_blank()) + 
+    scale_y_continuous(labels = scales::percent, limits=c(0,1))
 
 ggsave("felony conviction rate by prior record.png", path = "G:/CrimJustice/Dispositions by Race and Ethnicity/Figures 2019")
 
@@ -747,13 +756,15 @@ df %>%
          race %in% c("Black", "White", "Hispanic", "Asian/PI"),
          gender %in% c("M", "F")) %>%
   group_by(prior_record_cat) %>%
-  summarise(prison_of_fel_convicted = round(mean(sent_prison_flag)*100,1)) %>%
+  summarise(prison_of_fel_convicted = mean(sent_prison_flag)) %>%
   ggplot(aes(fill=prior_record_cat, y= prison_of_fel_convicted, x=prior_record_cat)) + 
     geom_bar(position="dodge", stat="identity") +
-    scale_color_brewer(palette = "Set1")+
+    scale_fill_brewer(palette = "Accent")+
     theme(axis.text.x=element_blank()) +
-    ylim(0, 100) +
-    geom_text(aes(label=round(prison_of_fel_convicted, 0)), position=position_dodge(width=0.9), vjust=-0.25)
+    geom_text(aes(label=scales::percent(prison_of_fel_convicted, accuracy = .1L)), position=position_dodge(width=0.9), vjust=-0.25)+
+    theme(axis.text.x=element_blank(), legend.position = "none") +
+    labs(x = element_blank(), y = element_blank(), fill = element_blank()) + 
+    scale_y_continuous(labels = scales::percent, limits=c(0,1))
 
 ggsave("prison sentencing rate by prior record.png", path = "G:/CrimJustice/Dispositions by Race and Ethnicity/Figures 2019")
 
@@ -766,10 +777,11 @@ df %>%
   summarise(prison_length_yrs = round(mean(prison_length_days, na.rm = T)/365.25, 1), perc_length_na = round(mean(is.na(prison_length_yrs))*100,1)) %>%
   ggplot(aes(fill=prior_record_cat, y= prison_length_yrs, x=prior_record_cat)) + 
     geom_bar(position="dodge", stat="identity") +
-    scale_color_brewer(palette = "Set1")+
     theme(axis.text.x=element_blank()) +
+    scale_fill_brewer(palette = "Accent")+
     ylim(0, 15) +
-    geom_text(aes(label=round(prison_length_yrs, 1)), position=position_dodge(width=0.9), vjust=-0.25)
+    geom_text(aes(label=round(prison_length_yrs, 1)), position=position_dodge(width=0.9), vjust=-0.25)+
+    labs(x = element_blank(), y = element_blank(), fill = element_blank())
 
 ggsave("prison sentence length by prior record.png", path = "G:/CrimJustice/Dispositions by Race and Ethnicity/Figures 2019")
 
@@ -784,12 +796,14 @@ df %>%
          race %in% c("Black", "White", "Hispanic", "Asian/PI"),
          gender %in% c("M", "F")) %>%
   group_by(arrest_f_offense_type) %>%
-  summarise(conviction_of_filings = round(mean(convicted_flag)*100,1)) %>%
+  summarise(conviction_of_filings = mean(convicted_flag)) %>%
   ggplot(aes(fill=arrest_f_offense_type, y= conviction_of_filings, x=arrest_f_offense_type)) + 
     geom_bar(position="dodge", stat="identity") +
-    scale_color_brewer(palette = "Set1")+
-    ylim(0, 100) +
-    geom_text(aes(label=round(conviction_of_filings, 0)), position=position_dodge(width=0.9), vjust=-0.25)
+    scale_fill_brewer(palette = "Set2")+
+    geom_text(aes(label=scales::percent(conviction_of_filings, accuracy = .1L)), position=position_dodge(width=0.9), vjust=-0.25)+
+    theme(axis.text.x=element_blank(), legend.position = "none") +
+    labs(x = element_blank(), y = element_blank(), fill = element_blank()) + 
+    scale_y_continuous(labels = scales::percent, limits=c(0,1))
 
 ggsave("conviction rate by arrest offense type.png", path = "G:/CrimJustice/Dispositions by Race and Ethnicity/Figures 2019")
 
@@ -800,12 +814,14 @@ df %>%
          race %in% c("Black", "White", "Hispanic", "Asian/PI"),
          gender %in% c("M", "F")) %>%
   group_by(arrest_f_offense_type) %>%
-  summarise(felony_conv_of_conv = round(mean(conviction_felony_flag)*100,1)) %>%
+  summarise(felony_conv_of_conv = mean(conviction_felony_flag)) %>%
   ggplot(aes(fill=arrest_f_offense_type, y= felony_conv_of_conv, x=arrest_f_offense_type)) + 
     geom_bar(position="dodge", stat="identity") +
-    scale_color_brewer(palette = "Set1")+
-    ylim(0, 100) +
-    geom_text(aes(label=round(felony_conv_of_conv, 0)), position=position_dodge(width=0.9), vjust=-0.25)
+    scale_fill_brewer(palette = "Set2")+
+    geom_text(aes(label=scales::percent(felony_conv_of_conv, accuracy = .1L)), position=position_dodge(width=0.9), vjust=-0.25)+
+    theme(axis.text.x=element_blank(), legend.position = "none") +
+    labs(x = element_blank(), y = element_blank(), fill = element_blank()) + 
+    scale_y_continuous(labels = scales::percent, limits=c(0,1))
 
 ggsave("felony conviction rate by arrest offense type.png", path = "G:/CrimJustice/Dispositions by Race and Ethnicity/Figures 2019")
 
@@ -816,12 +832,14 @@ df %>%
          race %in% c("Black", "White", "Hispanic", "Asian/PI"),
          gender %in% c("M", "F")) %>%
   group_by(arrest_f_offense_type) %>%
-  summarise(prison_of_fel_convicted = round(mean(sent_prison_flag)*100,1)) %>%
+  summarise(prison_of_fel_convicted = mean(sent_prison_flag)) %>%
   ggplot(aes(fill=arrest_f_offense_type, y= prison_of_fel_convicted, x=arrest_f_offense_type)) + 
     geom_bar(position="dodge", stat="identity") +
-    scale_color_brewer(palette = "Set1")+
-    ylim(0, 100) +
-    geom_text(aes(label=round(prison_of_fel_convicted, 0)), position=position_dodge(width=0.9), vjust=-0.25)
+    scale_fill_brewer(palette = "Set2")+
+    geom_text(aes(label=scales::percent(prison_of_fel_convicted, accuracy = .1L)), position=position_dodge(width=0.9), vjust=-0.25)+
+    theme(axis.text.x=element_blank(), legend.position = "none") +
+    labs(x = element_blank(), y = element_blank(), fill = element_blank()) + 
+    scale_y_continuous(labels = scales::percent, limits=c(0,1))
 
 ggsave("prison sentencing rate by arrest offense type.png", path = "G:/CrimJustice/Dispositions by Race and Ethnicity/Figures 2019")
 
@@ -835,9 +853,11 @@ df %>%
   summarise(prison_length_yrs = round(mean(prison_length_days, na.rm = T)/365.25, 1), perc_length_na = round(mean(is.na(prison_length_yrs))*100,1)) %>%
   ggplot(aes(fill=arrest_f_offense_type, y= prison_length_yrs, x=arrest_f_offense_type)) + 
     geom_bar(position="dodge", stat="identity") +
-    scale_color_brewer(palette = "Set1")+
+    scale_fill_brewer(palette = "Set2")+
     ylim(0, 15) +
-    geom_text(aes(label=round(prison_length_yrs, 1)), position=position_dodge(width=0.9), vjust=-0.25)
+    theme(axis.text.x=element_blank()) +
+    geom_text(aes(label=round(prison_length_yrs, 1)), position=position_dodge(width=0.9), vjust=-0.25)+
+    labs(x = element_blank(), y = element_blank(), fill = element_blank())
 
 ggsave("prison sentence length by arrest offense type.png", path = "G:/CrimJustice/Dispositions by Race and Ethnicity/Figures 2019")
 
@@ -1241,7 +1261,7 @@ df %>%
 ```
 
 
-#waffle charts
+# waffle charts
 ```{r waffles}
 
   #savings <- c(
@@ -2068,9 +2088,7 @@ jail_pr2 <- mcfaddenpr2(d = df %>%
 
 jail_pr2
 
-df %>%
-  mutate(orig_sent_incar = if_else(sent_prison_flag + sent_jail_flag + sent_imp_suspended_flag + sent_ex_suspended_flag > 0, 1, 0)) %>%
-  count(orig_sent_incar, sent_prison_flag, sent_jail_flag, sent_imp_suspended_flag, sent_ex_suspended_flag, sent_suspended_flag)
+
 ```
 
 TEST - R2 for jail length for misdemeanor convictions
